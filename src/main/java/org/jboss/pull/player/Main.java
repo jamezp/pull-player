@@ -45,8 +45,8 @@ public class Main {
     private static String GITHUB_LOGIN;
     private static String GITHUB_TOKEN;
     private static String PUBLISH_PUBLIC_JOB_URL;
-    private static String COMMENT_PRIVATE_LINK = "Private: " + PUBLISH_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
-    private static String COMMENT_PUBLIC_LINK = "Public: " + PUBLISH_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
+    private static String COMMENT_PRIVATE_LINK;
+    private static String COMMENT_PUBLIC_LINK;
 
 
     static {
@@ -66,8 +66,8 @@ public class Main {
             GITHUB_API_JBOSS_REPO_URL = GITHUB_API_URL + "/repos/" + GITHUB_REPO;
             BASE_URL = "http://" + BASE_HOST + ":" + BASE_PORT + "/jenkins";
             BASE_JOB_URL = BASE_URL + "/job";
-            COMMENT_PRIVATE_LINK = ":\\n Private:" + PUBLISH_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
-            COMMENT_PUBLIC_LINK = ":\\n Public:" + PUBLISH_PUBLIC_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
+            COMMENT_PRIVATE_LINK = "Private: " + PUBLISH_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
+            COMMENT_PUBLIC_LINK = "Public: " + PUBLISH_PUBLIC_JOB_URL + "/" + JENKINS_JOB_NAME + "/";
 
         } catch (Exception e) {
             e.printStackTrace(System.err);
