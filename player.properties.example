@@ -10,6 +10,7 @@
 
 # Job URL prefix to refer to in comments
 # jenkins.publish.url=http://my-server.lab.eng.bos.redhat.com/jenkins/job
+# jenkins.publish.public.url=http://hudson.jboss.org/job
 
 # Github Authentication Info
 # github.login=my-github-project-user
