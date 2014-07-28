@@ -9,11 +9,13 @@ package org.jboss.pull.player;
  * Yes, this is a very very ugly hackjob!
  *
  * @author Jason T. Greene
+ * @author Tomaz Cerar
  */
 public class Main {
 
     public static void main(String[] args) throws Exception {
-        PullPlayer player = new PullPlayer();
+        boolean dry = args.length == 1 && args[0].equals("--dry");
+        PullPlayer player = new PullPlayer(dry);
         System.out.println("Starting at: " + PullPlayer.getTime());
         try {
             player.checkPullRequests();

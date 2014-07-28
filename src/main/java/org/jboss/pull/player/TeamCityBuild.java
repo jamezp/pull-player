@@ -10,12 +10,14 @@ package org.jboss.pull.player;
  */
 public class TeamCityBuild {
 
-    private String status;
-    private int build;
+    private final String status;
+    private final int build;
+    private final boolean running;
 
-    TeamCityBuild(int build, String status) {
+    TeamCityBuild(int build, String status, boolean running) {
         this.build = build;
         this.status = status;
+        this.running = running;
     }
 
     public String getStatus() {
@@ -26,4 +28,7 @@ public class TeamCityBuild {
         return build;
     }
 
+    public boolean isRunning() {
+        return running;
+    }
 }

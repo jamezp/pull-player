@@ -28,10 +28,12 @@ public class GitHubApi {
     private final String baseUrl;
     private String username;
     private String loginData;
+    private final boolean dryRun;
 
-    public GitHubApi(String username, String loginData, String repository) {
+    public GitHubApi(String username, String loginData, String repository, boolean dryRun) {
         this.username = username;
         this.loginData = loginData;
+        this.dryRun = dryRun;
         this.baseUrl = GITHUB_API_URL + "/repos/" + repository;
     }
 
@@ -106,6 +108,10 @@ public class GitHubApi {
 
     public void postComment(int number, String comment) {
         System.out.println("Posting: " + comment);
+        if (this.dryRun){
+            System.out.println("Dry run - Not posting to github");
+            return;
+        }
         final String requestUrl = baseUrl + "/issues/" + number + "/comments";
 
         final HttpPost post = new HttpPost(requestUrl);

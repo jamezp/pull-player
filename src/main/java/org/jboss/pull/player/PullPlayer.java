@@ -18,22 +18,21 @@ public class PullPlayer {
     private static final int PAGE_LIMIT = 10000;
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
-    private final PersistentList queue = PersistentList.loadList("queue");
-    String teamcityBuildType;
+    //private final PersistentList queue = PersistentList.loadList("queue");
     private String githubLogin;
 
-    protected PullPlayer() throws Exception {
+    protected PullPlayer(final boolean dryRun) throws Exception {
         Properties props = Util.loadProperties();
         String teamcityHost = Util.require(props, "teamcity.host");
         String teamcityPort = Util.require(props, "teamcity.port");
-        teamcityBuildType = Util.require(props, "teamcity.build.type");
+        String teamcityBuildType = Util.require(props, "teamcity.build.type");
         githubLogin = Util.require(props, "github.login");
         String githubToken = Util.require(props, "github.token");
         String githubRepo = Util.require(props, "github.repo");
-        gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo);
         String user = Util.require(props, "teamcity.user");
         String password = Util.require(props, "teamcity.password");
-        teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBuildType);
+        gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
+        teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBuildType, dryRun);
     }
 
     static String getTime() {
@@ -42,18 +41,13 @@ public class PullPlayer {
         return dateFormat.format(date);
     }
 
-    boolean noBuildPending(int pull, PersistentList queue) {
-        return !teamCityApi.isPending(pull, queue);
-    }
 
-    void notifyBuildTriggered(String sha1, String branch, int pull) {
-        String comment = "Triggering build using a merge of " + sha1;
-        //comment += COMMENT_PRIVATE_LINK + "\\n";
-        System.out.println("not sending build triggered mail");
-        //gitHubApi.postComment(pull, comment);
+    boolean noBuildPending(int pull, List queue) {
+        return !queue.contains(pull);
     }
 
     private void processPulls(PersistentList whiteList, PersistentList adminList, List<ModelNode> nodes) {
+        final List<Integer> queue = teamCityApi.getQueuedBuilds();
         for (ModelNode pull : nodes) {
             int pullNumber = pull.get("number").asInt();
 
@@ -71,17 +65,14 @@ public class PullPlayer {
 
             boolean retrigger = false;
             boolean whitelistNotify = true;
-            boolean running = false;
             for (Comment comment : gitHubApi.getComments(pullNumber)) {
                 if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
                     retrigger = false;
-                    running = false;
                     continue;
                 }
 
                 if (githubLogin.equals(comment.user) && comment.comment.contains("running")) {
                     retrigger = false;
-                    running = true;
                     continue;
                 }
 
@@ -92,7 +83,6 @@ public class PullPlayer {
 
                 if (whiteList.has(user) && whiteList.has(comment.user) && job != null && retest.matcher(comment.comment).matches()) {
                     retrigger = true;
-                    //System.out.println(" we need to retrigger");
                     continue;
                 }
 
@@ -107,41 +97,39 @@ public class PullPlayer {
                 System.out.println("User not whitelisted, user: " + user);
                 continue;
             }
+            TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1);
 
             if (retrigger) {
-                if (!queue.contains(String.valueOf(pullNumber))) {
-                    Jobs.remove(sha1);
-                    teamCityApi.triggerJob(pullNumber, sha1, queue);
-                } else {
+                if (queue.contains(pullNumber)){
                     System.out.println("Build already queued");
+                }else if (build.isRunning()){
+                    System.out.println("Build already running");
+                }else{
+                    Jobs.remove(sha1);
                 }
                 continue;
             }
 
             if (job != null) {
-                queue.remove(String.valueOf(pullNumber));
                 System.out.println("Already done: " + pullNumber);
                 continue;
             }
 
             long cur = System.currentTimeMillis();
-            TeamCityBuild build = teamCityApi.findBuild(pullNumber,sha1);
+
             System.out.println("\tTime to find build: " + (System.currentTimeMillis() - cur));
             if (build != null) {
                 if (build.getStatus() != null) {
                     Jobs.storeCompletedJob(sha1, pullNumber, build.getBuild());
-                    queue.remove(String.valueOf(pullNumber));
                 } else {
                     System.out.println("In progress, skipping: " + pullNumber);
                 }
             } else if (noBuildPending(pullNumber, queue)) {
-                teamCityApi.triggerJob(pullNumber, sha1, queue);
-                notifyBuildTriggered(sha1, branch, pullNumber);
+                teamCityApi.triggerJob(pullNumber, sha1);
             } else {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
         }
-        queue.saveAll();
     }
 
     private boolean verifyWhitelist(PersistentList whiteList, String user, int pullNumber, boolean notify) {
@@ -165,8 +153,6 @@ public class PullPlayer {
 
             List<ModelNode> nodes = gitHubApi.getPullRequests(page);
             if (nodes.size() == 0) { break; }
-
-            System.out.println(nodes.size());
 
             processPulls(whiteList, adminList, nodes);
             if (page > PAGE_LIMIT) {
