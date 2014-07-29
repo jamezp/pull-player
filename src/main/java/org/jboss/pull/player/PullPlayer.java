@@ -7,7 +7,12 @@ import java.util.List;
 import java.util.Properties;
 import java.util.regex.Pattern;
 
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.HttpClients;
 import org.jboss.dmr.ModelNode;
+import sun.net.www.http.HttpClient;
 
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
@@ -18,21 +23,22 @@ public class PullPlayer {
     private static final int PAGE_LIMIT = 10000;
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
+    private final LabelProcessor labelProcessor;
     //private final PersistentList queue = PersistentList.loadList("queue");
     private String githubLogin;
 
     protected PullPlayer(final boolean dryRun) throws Exception {
-        Properties props = Util.loadProperties();
-        String teamcityHost = Util.require(props, "teamcity.host");
-        int teamcityPort = Integer.parseInt(Util.require(props, "teamcity.port"));
-        String teamcityBranchMapping = Util.require(props, "teamcity.build.branch-mapping");
-        githubLogin = Util.require(props, "github.login");
-        String githubToken = Util.require(props, "github.token");
-        String githubRepo = Util.require(props, "github.repo");
-        String user = Util.require(props, "teamcity.user");
-        String password = Util.require(props, "teamcity.password");
+        String teamcityHost = Util.require("teamcity.host");
+        int teamcityPort = Integer.parseInt(Util.require("teamcity.port"));
+        String teamcityBranchMapping = Util.require("teamcity.build.branch-mapping");
+        githubLogin = Util.require( "github.login");
+        String githubToken = Util.require( "github.token");
+        String githubRepo = Util.require("github.repo");
+        String user = Util.require("teamcity.user");
+        String password = Util.require("teamcity.password");
         gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
         teamCityApi = new TeamCityApi(teamcityHost,teamcityPort, user, password, teamcityBranchMapping, dryRun);
+        labelProcessor = new LabelProcessor();
     }
 
     static String getTime() {
@@ -65,6 +71,10 @@ public class PullPlayer {
                 continue;
             }
 
+            // Add the pull to the label processor
+            labelProcessor.add(pull);
+
+            System.out.printf("number: %d login: %s sha1: %s\n", pullNumber, user, sha1);
             String job = Jobs.getCompletedJob(sha1);
 
             boolean retrigger = false;
@@ -131,6 +141,8 @@ public class PullPlayer {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
         }
+        // Process the labels after each pull has been added
+        labelProcessor.process();
     }
 
     private boolean verifyWhitelist(PersistentList whiteList, String user, int pullNumber, boolean notify) {

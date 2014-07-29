@@ -8,11 +8,12 @@ package org.jboss.pull.player;
 import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Reader;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -66,17 +67,26 @@ class Util {
         return map;
     }
 
-    static Properties loadProperties() throws IOException {
-        Properties props = new Properties();
-        props.load(new FileReader(new File(BASE_DIR, "player.properties")));
-        return props;
+    static Properties getProperties() {
+        return PropertiesHolder.PROPERTIES;
     }
 
-    static String require(Properties props, String name) {
-        String ret = (String) props.get(name);
-        if (ret == null)
+    static String require(final String name) {
+        final String result = PropertiesHolder.PROPERTIES.getProperty(name);
+        if (result == null)
             throw new RuntimeException(name + " must be specified in player.properties");
 
-        return ret;
+        return result;
+    }
+
+    private static class PropertiesHolder {
+        static final Properties PROPERTIES = new Properties();
+        static {
+            try (Reader reader = Files.newBufferedReader(BASE_DIR.toPath().resolve("player.properties"), StandardCharsets.UTF_8)) {
+                PROPERTIES.load(reader);
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
     }
 }
