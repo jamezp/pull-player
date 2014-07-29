@@ -18,3 +18,9 @@
 
 # Github Rep (wihtout the .git)
 # github.repo=organization/repo
+
+# Labels to change or replace if the commit has updated.
+# A list of comma separated labels
+# issue.labels=fixme,rebase-required
+# The label to replace the label with
+# issue.label.fixme=review-needed

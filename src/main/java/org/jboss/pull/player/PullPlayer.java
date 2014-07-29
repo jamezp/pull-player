@@ -4,7 +4,6 @@ import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
-import java.util.Properties;
 import java.util.regex.Pattern;
 
 import org.jboss.dmr.ModelNode;
@@ -18,20 +17,19 @@ public class PullPlayer {
     private static final int PAGE_LIMIT = 10000;
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
+    private final LabelProcessor labelProcessor;
     //private final PersistentList queue = PersistentList.loadList("queue");
     private String githubLogin;
 
     protected PullPlayer(final boolean dryRun) throws Exception {
-        Properties props = Util.loadProperties();
-        String teamcityHost = Util.require(props, "teamcity.host");
-        String teamcityPort = Util.require(props, "teamcity.port");
-        String teamcityBuildType = Util.require(props, "teamcity.build.type");
-        githubLogin = Util.require(props, "github.login");
-        String githubToken = Util.require(props, "github.token");
-        String githubRepo = Util.require(props, "github.repo");
-        String user = Util.require(props, "teamcity.user");
-        String password = Util.require(props, "teamcity.password");
-        gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
+        String teamcityHost = Util.require("teamcity.host");
+        String teamcityPort = Util.require("teamcity.port");
+        String teamcityBuildType = Util.require("teamcity.build.type");
+        githubLogin = GitHubApi.USERNAME;
+        String user = Util.require("teamcity.user");
+        String password = Util.require("teamcity.password");
+        gitHubApi = new GitHubApi(dryRun);
+        labelProcessor = new LabelProcessor();
         teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBuildType, dryRun);
     }
 
@@ -59,6 +57,9 @@ public class PullPlayer {
                 System.err.println("Could not get sha1 for pull: " + pullNumber);
                 continue;
             }
+
+            // Add the pull to the label processor
+            labelProcessor.add(pull);
 
             System.out.printf("number: %d login: %s sha1: %s\n", pullNumber, user, sha1);
             String job = Jobs.getCompletedJob(sha1);
@@ -130,6 +131,8 @@ public class PullPlayer {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
         }
+        // Process the labels after each pull has been added
+        labelProcessor.process();
     }
 
     private boolean verifyWhitelist(PersistentList whiteList, String user, int pullNumber, boolean notify) {

@@ -22,19 +22,17 @@ import org.jboss.dmr.ModelNode;
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class GitHubApi {
-    private static final String GITHUB_API_URL = "https://api.github.com";
+    static final String GITHUB_API_URL = "https://api.github.com";
+    static final String GITHUB_BASE_URL = GITHUB_API_URL + "/repos/" + Util.require("github.repo");
+    static final String USERNAME = Util.require("github.login");
     private static final int PAGE_LIMIT = 10000;
+    private static final String LOGIN_DATA = Util.require("github.token");
+
     private final HttpClient httpClient = new DefaultHttpClient();
-    private final String baseUrl;
-    private String username;
-    private String loginData;
     private final boolean dryRun;
 
-    public GitHubApi(String username, String loginData, String repository, boolean dryRun) {
-        this.username = username;
-        this.loginData = loginData;
+    public GitHubApi(boolean dryRun) {
         this.dryRun = dryRun;
-        this.baseUrl = GITHUB_API_URL + "/repos/" + repository;
     }
 
     List<Comment> getComments(int number) {
@@ -43,9 +41,8 @@ public class GitHubApi {
         int page = 1;
         try {
             for (; page < PAGE_LIMIT; page++) {
-                get = new HttpGet(baseUrl + "/issues/" + number + "/comments?page=" + page);
-                includeAuthentication(get);
-                get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+                get = new HttpGet(GITHUB_BASE_URL + "/issues/" + number + "/comments?page=" + page);
+                addDefaultHeaders(get);
 
                 final HttpResponse execute = httpClient.execute(get);
                 if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
@@ -82,9 +79,8 @@ public class GitHubApi {
         HttpGet get = null;
 
         try {
-            get = new HttpGet(baseUrl + "/pulls?state=open&page=" + page);
-            includeAuthentication(get);
-            get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+            get = new HttpGet(GITHUB_BASE_URL + "/pulls?state=open&page=" + page);
+            addDefaultHeaders(get);
             final HttpResponse execute = httpClient.execute(get);
             if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
                 throw new IOException("Failed to complete request to GitHub. Status: " + execute.getStatusLine());
@@ -102,23 +98,18 @@ public class GitHubApi {
 
     }
 
-    private void includeAuthentication(HttpRequest request) throws IOException {
-        request.addHeader(BasicScheme.authenticate(new UsernamePasswordCredentials(username, loginData), "UTF-8", false));
-    }
-
     public void postComment(int number, String comment) {
         System.out.println("Posting: " + comment);
         if (this.dryRun){
             System.out.println("Dry run - Not posting to github");
             return;
         }
-        final String requestUrl = baseUrl + "/issues/" + number + "/comments";
+        final String requestUrl = GITHUB_BASE_URL + "/issues/" + number + "/comments";
 
         final HttpPost post = new HttpPost(requestUrl);
         try {
             post.setEntity(new StringEntity("{\"body\": \"" + comment + "\"}"));
-            includeAuthentication(post);
-            post.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+            addDefaultHeaders(post);
 
             final HttpResponse execute = httpClient.execute(post);
             if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_CREATED) {
@@ -132,5 +123,10 @@ public class GitHubApi {
         }
     }
 
+
+    static void addDefaultHeaders(final HttpRequest request) {
+        request.addHeader(BasicScheme.authenticate(new UsernamePasswordCredentials(USERNAME, LOGIN_DATA), "UTF-8", false));
+        request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
+    }
 
 }
