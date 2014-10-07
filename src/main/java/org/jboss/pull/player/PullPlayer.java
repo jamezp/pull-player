@@ -25,14 +25,14 @@ public class PullPlayer {
         Properties props = Util.loadProperties();
         String teamcityHost = Util.require(props, "teamcity.host");
         String teamcityPort = Util.require(props, "teamcity.port");
-        String teamcityBuildType = Util.require(props, "teamcity.build.type");
+        String teamcityBranchMapping = Util.require(props, "teamcity.build.branch-mapping");
         githubLogin = Util.require(props, "github.login");
         String githubToken = Util.require(props, "github.token");
         String githubRepo = Util.require(props, "github.repo");
         String user = Util.require(props, "teamcity.user");
         String password = Util.require(props, "teamcity.password");
         gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
-        teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBuildType, dryRun);
+        teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBranchMapping, dryRun);
     }
 
     static String getTime() {
@@ -49,18 +49,22 @@ public class PullPlayer {
     private void processPulls(PersistentList whiteList, PersistentList adminList, List<ModelNode> nodes) {
         final List<Integer> queue = teamCityApi.getQueuedBuilds();
         for (ModelNode pull : nodes) {
+            System.out.println("---------------------------------------------------------------------------------");
             int pullNumber = pull.get("number").asInt();
-
             String user = pull.get("user", "login").asString();
             String sha1 = pull.get("head", "sha").asString();
             String branch = pull.get("base", "ref").asString();
-
             if (sha1 == null) {
                 System.err.println("Could not get sha1 for pull: " + pullNumber);
                 continue;
             }
+            System.out.printf("number: %d login: %s sha1: %s, branch: %s\n", pullNumber, user, sha1, branch);
 
-            System.out.printf("number: %d login: %s sha1: %s\n", pullNumber, user, sha1);
+            if (!teamCityApi.hasBranchMapping(branch)) {
+                System.out.printf("Pull request %s send against target branch %s, but there is no build type defined for it.\n", pullNumber, branch);
+                continue;
+            }
+
             String job = Jobs.getCompletedJob(sha1);
 
             boolean retrigger = false;
@@ -92,22 +96,21 @@ public class PullPlayer {
                     continue;
                 }
             }
-            System.out.println("retrigger = " + retrigger);
             if (job == null & !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
                 System.out.println("User not whitelisted, user: " + user);
                 continue;
             }
-            TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1);
+            TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
 
             if (retrigger) {
-                if (queue.contains(pullNumber)){
+                if (queue.contains(pullNumber)) {
                     System.out.println("Build already queued");
-                }else if (build.isRunning()){
+                } else if (build != null && build.isRunning()) {
                     System.out.println("Build already running");
-                }else{
+                } else {
+                    job = null;
                     Jobs.remove(sha1);
                 }
-                continue;
             }
 
             if (job != null) {
@@ -115,9 +118,6 @@ public class PullPlayer {
                 continue;
             }
 
-            long cur = System.currentTimeMillis();
-
-            System.out.println("\tTime to find build: " + (System.currentTimeMillis() - cur));
             if (build != null) {
                 if (build.getStatus() != null) {
                     Jobs.storeCompletedJob(sha1, pullNumber, build.getBuild());
@@ -125,7 +125,7 @@ public class PullPlayer {
                     System.out.println("In progress, skipping: " + pullNumber);
                 }
             } else if (noBuildPending(pullNumber, queue)) {
-                teamCityApi.triggerJob(pullNumber, sha1);
+                teamCityApi.triggerJob(pullNumber, sha1, branch);
             } else {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }

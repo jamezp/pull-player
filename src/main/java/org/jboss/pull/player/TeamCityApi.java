@@ -2,8 +2,10 @@ package org.jboss.pull.player;
 
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpRequest;
@@ -26,18 +28,27 @@ public class TeamCityApi {
     private final String baseUrl;
     private final String username;
     private final String password;
-    private final String buildTypeId;
+    //private final String buildTypeId;
+    private final Map<String, String> branchMapping = new HashMap<>();
     private final boolean dryRun;
 
-    public TeamCityApi(String baseUrl, String username, String password, String buildTypeId, boolean dryRun) {
+    public TeamCityApi(String baseUrl, String username, String password, String branchMapping, boolean dryRun) {
         this.baseUrl = baseUrl;
         this.username = username;
         this.password = password;
-        this.buildTypeId = buildTypeId;
         this.dryRun = dryRun;
+        parseBranchMapping(branchMapping);
     }
 
-    List<Integer> getQueuedBuilds() {
+    private void parseBranchMapping(String mappings) {
+        for (String mapping : mappings.split(",")) {
+            String[] parts = mapping.split("=>");
+            branchMapping.put(parts[0].trim(), parts[1].trim());
+        }
+        System.out.println("branchMapping = " + branchMapping);
+    }
+
+    private List<Integer> getQueuedBuildsInternally(String buildTypeId) {
         List<Integer> result = new LinkedList<>();
         HttpGet get = null;
         try {
@@ -76,10 +87,23 @@ public class TeamCityApi {
         return result;
     }
 
-    public TeamCityBuild findBuild(int pull, String hash) {
+    List<Integer> getQueuedBuilds() {
+        List<Integer> result = new LinkedList<>();
+        for (String buildType : branchMapping.values()) {
+            result.addAll(getQueuedBuildsInternally(buildType));
+        }
+        return result;
+    }
+
+    protected boolean hasBranchMapping(String branch) {
+        return branchMapping.containsKey(branch);
+    }
+
+    public TeamCityBuild findBuild(int pull, String hash, String branch) {
+        String buildTypeId = branchMapping.get(branch);
         HttpGet get = null;
         try {
-            get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,count:1");
+            get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,canceled:any,count:1");
             includeAuthentication(get);
             get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             get.addHeader("Accept", "application/json");
@@ -148,12 +172,14 @@ public class TeamCityApi {
         }
     }
 
-    void triggerJob(int pull, String sha1) {
+    void triggerJob(int pull, String sha1, String branch) {
         System.out.println("triggering job for pull = " + pull);
+        String buildTypeId = branchMapping.get(branch);
         if (dryRun) {
-            System.out.println("DryRun, not triggering");
+            System.out.printf("DryRun, not triggering for branch: '%s' build type id: '%s'\n", branch, buildTypeId);
             return;
         }
+
         HttpPost post = null;
         try {
             post = new HttpPost(baseUrl + "/app/rest/buildQueue");
@@ -172,6 +198,9 @@ public class TeamCityApi {
             prop = props.add();
             prop.get("name").set("pull");
             prop.get("value").set(pull);
+            prop = props.add();
+            prop.get("name").set("branch");
+            prop.get("value").set(branch);
 
             post.setEntity(new StringEntity(build.toJSONString(false)));
             final HttpResponse execute = httpClient.execute(post);
