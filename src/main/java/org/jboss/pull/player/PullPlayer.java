@@ -102,6 +102,7 @@ public class PullPlayer {
             }
             TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
 
+            System.out.println("retrigger = " + retrigger);
             if (retrigger) {
                 if (queue.contains(pullNumber)) {
                     System.out.println("Build already queued");
@@ -118,7 +119,7 @@ public class PullPlayer {
                 continue;
             }
 
-            if (build != null) {
+            if (build != null && !retrigger) {
                 if (build.getStatus() != null) {
                     Jobs.storeCompletedJob(sha1, pullNumber, build.getBuild());
                 } else {
