@@ -24,7 +24,7 @@ public class PullPlayer {
     protected PullPlayer(final boolean dryRun) throws Exception {
         Properties props = Util.loadProperties();
         String teamcityHost = Util.require(props, "teamcity.host");
-        String teamcityPort = Util.require(props, "teamcity.port");
+        int teamcityPort = Integer.parseInt(Util.require(props, "teamcity.port"));
         String teamcityBranchMapping = Util.require(props, "teamcity.build.branch-mapping");
         githubLogin = Util.require(props, "github.login");
         String githubToken = Util.require(props, "github.token");
@@ -32,7 +32,7 @@ public class PullPlayer {
         String user = Util.require(props, "teamcity.user");
         String password = Util.require(props, "teamcity.password");
         gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
-        teamCityApi = new TeamCityApi("http://" + teamcityHost + ":" + teamcityPort + "/httpAuth", user, password, teamcityBranchMapping, dryRun);
+        teamCityApi = new TeamCityApi(teamcityHost,teamcityPort, user, password, teamcityBranchMapping, dryRun);
     }
 
     static String getTime() {

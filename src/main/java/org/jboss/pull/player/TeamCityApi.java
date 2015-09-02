@@ -8,15 +8,18 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.http.HttpHeaders;
+import org.apache.http.HttpHost;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
+import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.auth.BasicScheme;
-import org.apache.http.impl.client.DefaultHttpClient;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.jboss.dmr.ModelNode;
 
@@ -24,19 +27,27 @@ import org.jboss.dmr.ModelNode;
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class TeamCityApi {
-    private final HttpClient httpClient = new DefaultHttpClient();
+    private final HttpClient httpClient;
     private final String baseUrl;
-    private final String username;
-    private final String password;
+    /*private final String username;
+    private final String password;*/
     //private final String buildTypeId;
     private final Map<String, String> branchMapping = new HashMap<>();
     private final boolean dryRun;
 
-    public TeamCityApi(String baseUrl, String username, String password, String branchMapping, boolean dryRun) {
-        this.baseUrl = baseUrl;
-        this.username = username;
-        this.password = password;
+    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun) {
+        this.baseUrl = "http://" + host + ":" + port + "/httpAuth";
+       /* this.username = username;
+        this.password = password;*/
         this.dryRun = dryRun;
+
+        CredentialsProvider credsProvider = new BasicCredentialsProvider();
+        credsProvider.setCredentials(
+                new AuthScope(host, port),
+                new UsernamePasswordCredentials(username, password));
+        httpClient = HttpClients.custom()
+                .setDefaultCredentialsProvider(credsProvider)
+                .build();
         parseBranchMapping(branchMapping);
     }
 
@@ -72,6 +83,7 @@ public class TeamCityApi {
                         continue;
                     }
                     String branch = build.get("branchName").asString();
+                    if (!branch.contains("pull"))continue;
                     int pull = Integer.parseInt(branch.substring(branch.indexOf("/") + 1));
                     result.add(pull);
                 }
@@ -103,7 +115,7 @@ public class TeamCityApi {
         String buildTypeId = branchMapping.get(branch);
         HttpGet get = null;
         try {
-            get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,canceled:any,count:1");
+            get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,canceled:any,failedToStart:any,count:1");
             includeAuthentication(get);
             get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             get.addHeader("Accept", "application/json");
@@ -218,6 +230,6 @@ public class TeamCityApi {
     }
 
     private void includeAuthentication(HttpRequest request) throws IOException {
-        request.addHeader(BasicScheme.authenticate(new UsernamePasswordCredentials(username, password), "UTF-8", false));
+        //request.addHeader(BasicScheme.authenticate(new UsernamePasswordCredentials(username, password), "UTF-8", false));
     }
 }
