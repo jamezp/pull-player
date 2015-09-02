@@ -38,7 +38,7 @@ public class PullPlayer {
         String password = Util.require("teamcity.password");
         gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
         teamCityApi = new TeamCityApi(teamcityHost,teamcityPort, user, password, teamcityBranchMapping, dryRun);
-        labelProcessor = new LabelProcessor();
+        labelProcessor = new LabelProcessor(gitHubApi);
     }
 
     static String getTime() {
@@ -74,7 +74,6 @@ public class PullPlayer {
             // Add the pull to the label processor
             labelProcessor.add(pull);
 
-            System.out.printf("number: %d login: %s sha1: %s\n", pullNumber, user, sha1);
             String job = Jobs.getCompletedJob(sha1);
 
             boolean retrigger = false;

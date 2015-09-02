@@ -57,10 +57,11 @@ class LabelProcessor {
     private final Labels labels;
 
     private final ModelNode issuesModel;
-    private final HttpClient client = new DefaultHttpClient();
     private final PrintStream err = System.err;
+    private GitHubApi api;
 
-    LabelProcessor() {
+    LabelProcessor(GitHubApi api) {
+        this.api = api;
         labels = new Labels();
         // If the file exists, load it
         if (Files.exists(path)) {
@@ -117,7 +118,7 @@ class LabelProcessor {
     void process() {
         try {
             // Get all the open issues to lessen the hits to the API
-            final ModelNode openIssues = getIssues();
+            final ModelNode openIssues = api.getIssues();
 
             // Process each issue in the model
             for (Property property : issuesModel.asPropertyList()) {
@@ -152,7 +153,7 @@ class LabelProcessor {
                         if (changeRequired && value.hasDefined("new-sha")) {
                             final String issueUrl = value.get("issue_url").asString();
                             // Set the new labels
-                            setLabels(issueUrl, newLabels);
+                            api.setLabels(issueUrl, newLabels);
                             // Node needs to be removed
                             issuesModel.remove(property.getName());
                         } else if (!changeRequired) {
@@ -177,31 +178,6 @@ class LabelProcessor {
         }
     }
 
-    private ModelNode getIssues() throws IOException {
-        final ModelNode resultIssues = new ModelNode();
-        try {
-            // Get all the issues for the repository
-            final HttpGet get = new HttpGet(GitHubApi.GITHUB_BASE_URL + "/issues");
-            GitHubApi.addDefaultHeaders(get);
-            final HttpResponse response = execute(get, HttpURLConnection.HTTP_OK);
-            ModelNode responseResult = ModelNode.fromJSONStream(response.getEntity().getContent());
-            for (ModelNode node : responseResult.asList()) {
-                // We only want issues with a pull request
-                if (node.hasDefined("pull_request") && node.hasDefined("labels")) {
-                    // Verify the labels aren't empty
-                    if (!node.get("labels").asList().isEmpty()) {
-                        // The key will be the PR URL
-                        resultIssues.get(node.get("pull_request", "url").asString()).set(node);
-                    }
-                }
-            }
-        } catch (Exception e){
-            e.printStackTrace(err);
-        }
-        return resultIssues;
-    }
-
-
     private List<String> getLabels(final ModelNode issue) {
         final List<String> result = new ArrayList<>();
         final ModelNode node = issue.get("labels");
@@ -212,36 +188,5 @@ class LabelProcessor {
             }
         }
         return result;
-    }
-
-    private void setLabels(final String issueUrl, final Collection<String> labels) {
-        // Build a list of the new labels
-        final StringBuilder sb = new StringBuilder(32).append('[');
-        final int size = labels.size();
-        int counter = 0;
-        for (String label : labels) {
-            sb.append('"').append(label).append('"');
-            if (++counter < size) {
-                sb.append(',');
-            }
-        }
-        sb.append(']');
-        try {
-            final HttpPut put = new HttpPut(issueUrl + "/labels");
-            GitHubApi.addDefaultHeaders(put);
-            put.setEntity(new StringEntity(sb.toString()));
-            execute(put, HttpURLConnection.HTTP_OK);
-        } catch (Exception e) {
-            e.printStackTrace(err);
-        }
-
-    }
-
-    private HttpResponse execute(final HttpUriRequest request, final int status) throws IOException {
-        final HttpResponse response = client.execute(request);
-        if (response.getStatusLine().getStatusCode() != status) {
-            err.printf("Could not %s to %s %n\t%s%n", request.getMethod(), request.getURI(), response.getStatusLine());
-        }
-        return response;
     }
 }
