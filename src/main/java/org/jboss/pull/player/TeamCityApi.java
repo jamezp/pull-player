@@ -1,14 +1,6 @@
 package org.jboss.pull.player;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-
 import org.apache.http.HttpHeaders;
-import org.apache.http.HttpHost;
 import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
@@ -22,6 +14,13 @@ import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.jboss.dmr.ModelNode;
+
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
 
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
@@ -168,7 +167,15 @@ public class TeamCityApi {
             }
             System.out.println("Hash for last build matches: " + found);
             if (found) {
-                return new TeamCityBuild(build.get("number").asInt(), build.get("status").asString(), build.hasDefined("running") && build.get("running").asBoolean());
+                /*
+                    "queuedDate" => "20150903T162504+0200",
+                    "startDate" => "20150903T172007+0200",
+                    "finishDate" => "20150903T172008+0200",
+                 */
+
+                return new TeamCityBuild(build.get("number").asInt(), build.get("status").asString(),
+                        build.hasDefined("running") && build.get("running").asBoolean(),
+                        build.get("queuedDate").asString());
             } else {
                 return null;
             }

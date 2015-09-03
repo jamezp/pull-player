@@ -2,6 +2,7 @@ package org.jboss.pull.player;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
+import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Properties;
@@ -77,6 +78,7 @@ public class PullPlayer {
             String job = Jobs.getCompletedJob(sha1);
 
             boolean retrigger = false;
+            Instant retriggerDate= null;
             boolean whitelistNotify = true;
             for (Comment comment : gitHubApi.getComments(pullNumber)) {
                 if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
@@ -95,6 +97,7 @@ public class PullPlayer {
                 }
 
                 if (whiteList.has(user) && whiteList.has(comment.user) && job != null && retest.matcher(comment.comment).matches()) {
+                    retriggerDate = comment.created;
                     retrigger = true;
                     continue;
                 }
@@ -113,7 +116,10 @@ public class PullPlayer {
 
             System.out.println("retrigger = " + retrigger);
             if (retrigger) {
-                if (queue.contains(pullNumber)) {
+                if (build!=null && build.getQueuedDate().isAfter(retriggerDate)){
+                    System.out.println("Not triggering as newer build already exists");
+                    retrigger = false;
+                }else if (queue.contains(pullNumber)) {
                     System.out.println("Build already queued");
                 } else if (build != null && build.isRunning()) {
                     System.out.println("Build already running");

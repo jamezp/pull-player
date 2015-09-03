@@ -61,9 +61,13 @@ public class GitHubApi {
                 if (modelNodes.size() == 0) {
                     break;
                 }
-
+                /*
+                   "created_at" => "2015-09-01T15:35:01Z",
+                    "updated_at" => "2015-09-01T15:35:01Z",
+                 */
                 for (ModelNode comment : modelNodes) {
-                    comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString().toLowerCase()));
+                    String createdAt = comment.get("created_at").asString();
+                    comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString(),createdAt));
                 }
                 get.releaseConnection();
                 get = null;
