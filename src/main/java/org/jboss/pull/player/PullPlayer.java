@@ -1,44 +1,37 @@
 package org.jboss.pull.player;
 
+import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
-import java.util.Properties;
 import java.util.regex.Pattern;
 
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
-import org.apache.http.impl.client.BasicCredentialsProvider;
-import org.apache.http.impl.client.HttpClients;
 import org.jboss.dmr.ModelNode;
-import sun.net.www.http.HttpClient;
 
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class PullPlayer {
     private static final Pattern okToTest = Pattern.compile(".*ok\\W+to\\W+test.*", Pattern.DOTALL);
-    private static final Pattern retest = Pattern.compile(".*retest\\W+this\\W+please.*", Pattern.DOTALL);
-    private static final int PAGE_LIMIT = 10000;
+    private static final Pattern retest = Pattern.compile(".*retest\\W+this\\W+please.*", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
     private final LabelProcessor labelProcessor;
-    //private final PersistentList queue = PersistentList.loadList("queue");
     private String githubLogin;
 
     protected PullPlayer(final boolean dryRun) throws Exception {
         String teamcityHost = Util.require("teamcity.host");
         int teamcityPort = Integer.parseInt(Util.require("teamcity.port"));
         String teamcityBranchMapping = Util.require("teamcity.build.branch-mapping");
-        githubLogin = Util.require( "github.login");
-        String githubToken = Util.require( "github.token");
+        githubLogin = Util.require("github.login");
+        String githubToken = Util.require("github.token");
         String githubRepo = Util.require("github.repo");
         String user = Util.require("teamcity.user");
         String password = Util.require("teamcity.password");
-        gitHubApi = new GitHubApi(githubLogin, githubToken, githubRepo, dryRun);
-        teamCityApi = new TeamCityApi(teamcityHost,teamcityPort, user, password, teamcityBranchMapping, dryRun);
+        gitHubApi = new GitHubApi(githubToken, githubRepo, dryRun);
+        teamCityApi = new TeamCityApi(teamcityHost, teamcityPort, user, password, teamcityBranchMapping, dryRun);
         labelProcessor = new LabelProcessor(gitHubApi);
     }
 
@@ -78,7 +71,7 @@ public class PullPlayer {
             String job = Jobs.getCompletedJob(sha1);
 
             boolean retrigger = false;
-            Instant retriggerDate= null;
+            Instant retriggerDate = null;
             boolean whitelistNotify = true;
             for (Comment comment : gitHubApi.getComments(pullNumber)) {
                 if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
@@ -116,10 +109,10 @@ public class PullPlayer {
 
             System.out.println("retrigger = " + retrigger);
             if (retrigger) {
-                if (build!=null && build.getQueuedDate().isAfter(retriggerDate)){
+                if (build != null && build.getQueuedDate().isAfter(retriggerDate)) {
                     System.out.println("Not triggering as newer build already exists");
                     retrigger = false;
-                }else if (queue.contains(pullNumber)) {
+                } else if (queue.contains(pullNumber)) {
                     System.out.println("Build already queued");
                 } else if (build != null && build.isRunning()) {
                     System.out.println("Build already running");
@@ -146,8 +139,6 @@ public class PullPlayer {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
         }
-        // Process the labels after each pull has been added
-        labelProcessor.process();
     }
 
     private boolean verifyWhitelist(PersistentList whiteList, String user, int pullNumber, boolean notify) {
@@ -166,17 +157,14 @@ public class PullPlayer {
         final PersistentList whiteList = PersistentList.loadList("white-list");
         final PersistentList adminList = PersistentList.loadList("admin-list");
 
-        for (int page = 1; ; page++) {
+        List<ModelNode> nodes = gitHubApi.getPullRequests();
+        processPulls(whiteList, adminList, nodes);
 
+        // Process the labels after each pull has been added
+        labelProcessor.process();
+    }
 
-            List<ModelNode> nodes = gitHubApi.getPullRequests(page);
-            if (nodes.size() == 0) { break; }
-
-            processPulls(whiteList, adminList, nodes);
-            if (page > PAGE_LIMIT) {
-                throw new IllegalStateException("Exceeded page limit");
-            }
-        }
-
+    protected void cleanup() throws IOException {
+        gitHubApi.close();
     }
 }

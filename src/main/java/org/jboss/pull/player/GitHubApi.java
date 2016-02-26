@@ -1,12 +1,26 @@
 package org.jboss.pull.player;
 
+import java.io.File;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.List;
+
+import net.sf.ehcache.Cache;
+import net.sf.ehcache.CacheManager;
+import net.sf.ehcache.Element;
+import net.sf.ehcache.config.CacheConfiguration;
+import net.sf.ehcache.config.Configuration;
+import net.sf.ehcache.config.DiskStoreConfiguration;
+import net.sf.ehcache.config.PersistenceConfiguration;
+import org.apache.http.Header;
+import org.apache.http.HeaderElement;
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
-import org.apache.http.auth.AuthScope;
-import org.apache.http.auth.UsernamePasswordCredentials;
 import org.apache.http.client.AuthCache;
-import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
@@ -15,16 +29,10 @@ import org.apache.http.client.protocol.HttpClientContext;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.auth.BasicScheme;
 import org.apache.http.impl.client.BasicAuthCache;
-import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.jboss.dmr.ModelNode;
-
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
 
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
@@ -32,34 +40,63 @@ import java.util.List;
 public class GitHubApi {
     private static final String GITHUB_API_URL = "https://api.github.com";
     private static final int PAGE_LIMIT = 10000;
-    private final HttpClient httpClient;
+    private final CloseableHttpClient httpClient;
     private final String baseUrl;
     private final boolean dryRun;
-    private final BasicCredentialsProvider credentialsProvider;
+    private final Cache cache = getCache("github-api.cache");
 
-    public GitHubApi(String username, String loginData, String repository, boolean dryRun) {
+    public GitHubApi(String authToken, String repository, boolean dryRun) {
         this.dryRun = dryRun;
         this.baseUrl = GITHUB_API_URL + "/repos/" + repository;
-        this.httpClient = createHttpClient();
-        credentialsProvider = new BasicCredentialsProvider();
-        credentialsProvider.setCredentials(AuthScope.ANY, new UsernamePasswordCredentials(username, loginData));
-
+        this.httpClient = createHttpClient(authToken);
     }
+
+    private static Cache getCache(String fileName) {
+        DiskStoreConfiguration diskStoreConfiguration = new DiskStoreConfiguration();
+        diskStoreConfiguration.setPath(Util.BASE_DIR + File.separator + fileName);
+
+        // Already created a configuration object ...
+        Configuration configuration = new Configuration();
+        configuration.addDiskStore(diskStoreConfiguration);
+        CacheConfiguration cc = new CacheConfiguration();
+        PersistenceConfiguration pc = new PersistenceConfiguration();
+        pc.setStrategy(PersistenceConfiguration.Strategy.LOCALRESTARTABLE.name());
+        //cc.persistence(pc);
+        cc.setDiskPersistent(true);
+        //cc.internalSetDiskCapacity();
+        cc.setMaxBytesLocalHeap(1024L * 1024L * 5L); //5mb
+        cc.setName("github-api");
+        configuration.addCache(cc);
+        CacheManager mgr = new CacheManager(configuration);
+
+        // create the cache called "hello-world"
+
+        return mgr.getCache("github-api");
+    }
+
+    private String getCommentCacheKey(int pull) {
+        return "pull-" + pull;
+    }
+
+
 
     List<Comment> getComments(int number) {
         HttpGet get = null;
         List<Comment> comments = new ArrayList<>();
         int page = 1;
         try {
-            for (; page < PAGE_LIMIT; page++) {
-                get = new HttpGet(baseUrl + "/issues/" + number + "/comments?page=" + page);
-
-                final HttpResponse execute = execute(get, HttpURLConnection.HTTP_OK);
-
-                ModelNode node = ModelNode.fromJSONStream(execute.getEntity().getContent());
+            String url = baseUrl + "/issues/" + number + "/comments?page=" + page;
+            while (url != null) {
+                get = new HttpGet(url);
+                final HttpResponse response = execute(get);
+                url = nextLink(response);
+                if (notModified(response)) {
+                    continue;
+                }
+                ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
                 List<ModelNode> modelNodes = node.asList();
                 if (modelNodes.size() == 0) {
-                    break;
+                    continue;
                 }
                 /*
                    "created_at" => "2015-09-01T15:35:01Z",
@@ -67,7 +104,7 @@ public class GitHubApi {
                  */
                 for (ModelNode comment : modelNodes) {
                     String createdAt = comment.get("created_at").asString();
-                    comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString(),createdAt));
+                    comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString(), createdAt));
                 }
                 get.releaseConnection();
                 get = null;
@@ -79,21 +116,29 @@ public class GitHubApi {
                 get.releaseConnection();
             }
         }
-        if (page == PAGE_LIMIT) {
-            throw new IllegalStateException("Exceeded page limit");
-        }
 
         return comments;
     }
 
-    List<ModelNode> getPullRequests(final int page) {
+    /**
+     *
+     * @return returns all pull requests that might need processing
+     */
+    List<ModelNode> getPullRequests() {
         HttpGet get = null;
-
+        List<ModelNode> result = new ArrayList<>();
         try {
-            get = new HttpGet(baseUrl + "/pulls?state=open&page=" + page);
-            final HttpResponse execute = execute(get, HttpURLConnection.HTTP_OK);
-            ModelNode node = ModelNode.fromJSONStream(execute.getEntity().getContent());
-            return node.asList();
+            String url = baseUrl + "/pulls?state=open";
+            while (url != null) {
+                get = new HttpGet(url);
+                final HttpResponse response = execute(get);
+                url = nextLink(response);
+                if (notModified(response)) {
+                    continue;
+                }
+                ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
+                result.addAll(node.asList());
+            }
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -101,8 +146,22 @@ public class GitHubApi {
                 get.releaseConnection();
             }
         }
-        return null;
+        return result;
 
+    }
+
+    private String nextLink(HttpResponse response) {
+        Header header = response.getFirstHeader("Link");
+        if (header == null) { // no pagination
+            return null;
+        }
+        for (HeaderElement el : header.getElements()) {
+            if ("next".equals(el.getParameterByName("rel").getValue())) {
+                String link = el.getName() + "=" + el.getValue();
+                return link.substring(1,link.length() -1);
+            }
+        }
+        return null;
     }
 
     public void postComment(int number, String comment) {
@@ -116,7 +175,7 @@ public class GitHubApi {
         final HttpPost post = new HttpPost(requestUrl);
         try {
             post.setEntity(new StringEntity("{\"body\": \"" + comment + "\"}"));
-            final HttpResponse execute = execute(post, HttpURLConnection.HTTP_OK);
+            final HttpResponse execute = execute(post);
         } catch (Exception e) {
             e.printStackTrace(System.err);
         } finally {
@@ -124,34 +183,37 @@ public class GitHubApi {
         }
     }
 
-    HttpClient createHttpClient() {
+    CloseableHttpClient createHttpClient(String authToken) {
 
         return HttpClients
                 .custom()
-                .setDefaultCredentialsProvider(credentialsProvider)
+                .setDefaultHeaders(Arrays.asList(new BasicHeader("Authorization", "token " + authToken),
+                        new BasicHeader("User-Agent", "WildFly-Pull-Player")))
                 .build();
     }
-  /*  void addDefaultHeaders(final HttpRequest request) {
-        BasicScheme basicScheme = new BasicScheme(StandardCharsets.UTF_8);
-           request.addHeader(basicScheme.authenticate(new UsernamePasswordCredentials(username, loginData), request, new BasicHttpContext()));
-           request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
-    }*/
 
 
-    public ModelNode getIssues() throws IOException {
+    public ModelNode getIssuesWithPullRequests() throws IOException {
         final ModelNode resultIssues = new ModelNode();
         try {
             // Get all the issues for the repository
-            final HttpGet get = new HttpGet(baseUrl + "/issues");
-            final HttpResponse response = execute(get, HttpURLConnection.HTTP_OK);
-            ModelNode responseResult = ModelNode.fromJSONStream(response.getEntity().getContent());
-            for (ModelNode node : responseResult.asList()) {
-                // We only want issues with a pull request
-                if (node.hasDefined("pull_request") && node.hasDefined("labels")) {
-                    // Verify the labels aren't empty
-                    if (!node.get("labels").asList().isEmpty()) {
-                        // The key will be the PR URL
-                        resultIssues.get(node.get("pull_request", "url").asString()).set(node);
+            String url = baseUrl + "/issues?state=open&filter=all";
+            while (url != null) {
+                final HttpGet get = new HttpGet(url);
+                final HttpResponse response = execute(get);
+                url = nextLink(response);
+                if (notModified(response)) { //noting new to do
+                    return new ModelNode();
+                }
+                ModelNode responseResult = ModelNode.fromJSONStream(response.getEntity().getContent());
+                for (ModelNode node : responseResult.asList()) {
+                    // We only want issues with a pull request
+                    if (node.hasDefined("pull_request") && node.hasDefined("labels")) {
+                        // Verify the labels aren't empty
+                        if (!node.get("labels").asList().isEmpty()) {
+                            // The key will be the PR URL
+                            resultIssues.get(node.get("pull_request", "url").asString()).set(node);
+                        }
                     }
                 }
             }
@@ -180,29 +242,67 @@ public class GitHubApi {
         }
         sb.append(']');
         try {
-            final HttpPut put = new HttpPut(issueUrl + "/labels?state=open");
+            final HttpPut put = new HttpPut(issueUrl + "/labels");
             put.setEntity(new StringEntity(sb.toString()));
-            execute(put, HttpURLConnection.HTTP_OK);
+            execute(put);
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
 
     }
 
-    private HttpResponse execute(final HttpUriRequest request, final int status) throws IOException {
+    private boolean notModified(HttpResponse response){
+        return response.getStatusLine().getStatusCode() == HttpURLConnection.HTTP_NOT_MODIFIED;
+
+    }
+
+    private HttpResponse execute(final HttpUriRequest request) throws IOException {
 
         AuthCache authCache = new BasicAuthCache();
         authCache.put(HttpHost.create(GITHUB_API_URL), new BasicScheme());
         // Add AuthCache to the execution context
         final HttpClientContext context = HttpClientContext.create();
-        context.setCredentialsProvider(credentialsProvider);
-        context.setAuthCache(authCache);
         request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
-        final HttpResponse response = httpClient.execute(request, context);
-        if (response.getStatusLine().getStatusCode() != status) {
-            System.err.printf("Could not %s to %s %n\t%s%n", request.getMethod(), request.getURI(), response.getStatusLine());
+
+        String cacheKey = request.getURI().toString();
+        Element element = cache.get(cacheKey);
+        if (request.getMethod() == HttpGet.METHOD_NAME && element != null) {
+            request.addHeader("If-None-Match", element.getObjectValue().toString());
         }
+
+        final HttpResponse response = httpClient.execute(request, context);
+        int responseStatus = response.getStatusLine().getStatusCode();
+
+        //System.out.println("Next page for "+request.getURI()+": " + nextLink(response));
+        if (responseStatus == HttpURLConnection.HTTP_NOT_MODIFIED) {
+            System.out.println("url " + request.getURI() + " is not modified");
+        } else {
+            if (responseStatus != HttpURLConnection.HTTP_OK) {
+                System.err.printf("Could not %s to %s %n\t%s%n", request.getMethod(), request.getURI(), response.getStatusLine());
+            }
+            if (request.getMethod() == HttpGet.METHOD_NAME) {
+                String eTag = response.getFirstHeader("ETag").getValue();
+                if (eTag == null) {
+                    System.out.println("ETag is not defined for uri: " + request.getURI());
+                } else {
+                    cache.put(new Element(cacheKey, eTag));
+                }
+            }
+        }
+
+        String remaining = response.getFirstHeader("X-RateLimit-Remaining").getValue();
+        System.out.println("X-RateLimit-Remaining: " + remaining);
+
+        /*for (Header h : response.getAllHeaders()){
+            System.out.println(String.format("Header: %s",h));
+        }*/
         return response;
+    }
+
+    public void close() throws IOException {
+        cache.flush();
+        cache.getCacheManager().shutdown();
+        httpClient.close();
     }
 
 }

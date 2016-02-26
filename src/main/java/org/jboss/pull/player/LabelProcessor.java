@@ -26,22 +26,13 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.PrintWriter;
-import java.net.HttpURLConnection;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 
-import org.apache.http.HttpResponse;
-import org.apache.http.client.HttpClient;
-import org.apache.http.client.methods.HttpGet;
-import org.apache.http.client.methods.HttpPut;
-import org.apache.http.client.methods.HttpUriRequest;
-import org.apache.http.entity.StringEntity;
-import org.apache.http.impl.client.DefaultHttpClient;
 import org.jboss.dmr.ModelNode;
 import org.jboss.dmr.Property;
 
@@ -118,7 +109,7 @@ class LabelProcessor {
     void process() {
         try {
             // Get all the open issues to lessen the hits to the API
-            final ModelNode openIssues = api.getIssues();
+            final ModelNode openIssues = api.getIssuesWithPullRequests();
 
             // Process each issue in the model
             for (Property property : issuesModel.asPropertyList()) {

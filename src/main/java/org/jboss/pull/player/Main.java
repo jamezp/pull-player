@@ -21,7 +21,9 @@ public class Main {
             player.checkPullRequests();
         } catch (Exception e) {
             e.printStackTrace(System.err);
-            System.exit(1);
+            //System.exit(1);
+        } finally {
+            player.cleanup();
         }
         System.out.println("Completed at: " + PullPlayer.getTime());
     }
