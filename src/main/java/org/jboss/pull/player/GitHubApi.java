@@ -1,20 +1,19 @@
 package org.jboss.pull.player;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.Reader;
 import java.net.HttpURLConnection;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import net.sf.ehcache.Cache;
-import net.sf.ehcache.CacheManager;
-import net.sf.ehcache.Element;
-import net.sf.ehcache.config.CacheConfiguration;
-import net.sf.ehcache.config.Configuration;
-import net.sf.ehcache.config.DiskStoreConfiguration;
-import net.sf.ehcache.config.PersistenceConfiguration;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpHeaders;
@@ -39,11 +38,13 @@ import org.jboss.dmr.ModelNode;
  */
 public class GitHubApi {
     private static final String GITHUB_API_URL = "https://api.github.com";
+    private final Path cacheFileName = Util.BASE_DIR.toPath().resolve("github-api.cache");
     private static final int PAGE_LIMIT = 10000;
     private final CloseableHttpClient httpClient;
     private final String baseUrl;
     private final boolean dryRun;
-    private final Cache cache = getCache("github-api.cache");
+    private final Properties cache = getCache();
+    private final AtomicBoolean cacheDirty = new AtomicBoolean(false);
 
     public GitHubApi(String authToken, String repository, boolean dryRun) {
         this.dryRun = dryRun;
@@ -51,8 +52,8 @@ public class GitHubApi {
         this.httpClient = createHttpClient(authToken);
     }
 
-    private static Cache getCache(String fileName) {
-        DiskStoreConfiguration diskStoreConfiguration = new DiskStoreConfiguration();
+    private Properties getCache() {
+        /*DiskStoreConfiguration diskStoreConfiguration = new DiskStoreConfiguration();
         diskStoreConfiguration.setPath(Util.BASE_DIR + File.separator + fileName);
 
         // Already created a configuration object ...
@@ -71,14 +72,22 @@ public class GitHubApi {
 
         // create the cache called "hello-world"
 
-        return mgr.getCache("github-api");
+        return mgr.getCache("github-api");*/
+        Properties p = new Properties();
+        if (Files.exists(cacheFileName)) {
+            try (Reader r = Files.newBufferedReader(cacheFileName, StandardCharsets.UTF_8)) {
+                p.load(r);
+            } catch (IOException e) {
+                System.out.println("could not load cache");
+                e.printStackTrace(System.out);
+            }
+        }
+        if (p.size()> 200){
+            System.out.println("Size of cache got too big, clearing out cache");
+            p.clear();
+        }
+        return p;
     }
-
-    private String getCommentCacheKey(int pull) {
-        return "pull-" + pull;
-    }
-
-
 
     List<Comment> getComments(int number) {
         HttpGet get = null;
@@ -121,7 +130,6 @@ public class GitHubApi {
     }
 
     /**
-     *
      * @return returns all pull requests that might need processing
      */
     List<ModelNode> getPullRequests() {
@@ -158,7 +166,7 @@ public class GitHubApi {
         for (HeaderElement el : header.getElements()) {
             if ("next".equals(el.getParameterByName("rel").getValue())) {
                 String link = el.getName() + "=" + el.getValue();
-                return link.substring(1,link.length() -1);
+                return link.substring(1, link.length() - 1);
             }
         }
         return null;
@@ -251,7 +259,7 @@ public class GitHubApi {
 
     }
 
-    private boolean notModified(HttpResponse response){
+    private boolean notModified(HttpResponse response) {
         return response.getStatusLine().getStatusCode() == HttpURLConnection.HTTP_NOT_MODIFIED;
 
     }
@@ -265,9 +273,9 @@ public class GitHubApi {
         request.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
 
         String cacheKey = request.getURI().toString();
-        Element element = cache.get(cacheKey);
-        if (request.getMethod() == HttpGet.METHOD_NAME && element != null) {
-            request.addHeader("If-None-Match", element.getObjectValue().toString());
+        String value = cache.getProperty(cacheKey);
+        if (request.getMethod() == HttpGet.METHOD_NAME && value != null) {
+            request.addHeader("If-None-Match", value);
         }
 
         final HttpResponse response = httpClient.execute(request, context);
@@ -285,7 +293,8 @@ public class GitHubApi {
                 if (eTag == null) {
                     System.out.println("ETag is not defined for uri: " + request.getURI());
                 } else {
-                    cache.put(new Element(cacheKey, eTag));
+                    cache.put(cacheKey, eTag);
+                    cacheDirty.compareAndSet(false, true);
                 }
             }
         }
@@ -300,8 +309,9 @@ public class GitHubApi {
     }
 
     public void close() throws IOException {
-        cache.flush();
-        cache.getCacheManager().shutdown();
+        if (cacheDirty.get()) {
+            cache.store(Files.newBufferedWriter(cacheFileName, StandardCharsets.UTF_8, StandardOpenOption.CREATE), null);
+        }
         httpClient.close();
     }
 

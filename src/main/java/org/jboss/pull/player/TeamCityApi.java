@@ -1,7 +1,12 @@
 package org.jboss.pull.player;
 
+import java.net.HttpURLConnection;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+
 import org.apache.http.HttpHeaders;
-import org.apache.http.HttpRequest;
 import org.apache.http.HttpResponse;
 import org.apache.http.auth.AuthScope;
 import org.apache.http.auth.UsernamePasswordCredentials;
@@ -15,22 +20,12 @@ import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.jboss.dmr.ModelNode;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
-
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class TeamCityApi {
     private final HttpClient httpClient;
     private final String baseUrl;
-    /*private final String username;
-    private final String password;*/
-    //private final String buildTypeId;
     private final Map<String, String> branchMapping = new HashMap<>();
     private final boolean dryRun;
 
@@ -64,7 +59,6 @@ public class TeamCityApi {
         try {
             //get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,count:1");
             get = new HttpGet(baseUrl + "/app/rest/buildQueue?locator=buildType:" + buildTypeId);
-            includeAuthentication(get);
             get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             get.addHeader("Accept", "application/json");
             final HttpResponse execute = httpClient.execute(get);
@@ -82,7 +76,7 @@ public class TeamCityApi {
                         continue;
                     }
                     String branch = build.get("branchName").asString();
-                    if (!branch.contains("pull"))continue;
+                    if (!branch.contains("pull")) { continue; }
                     int pull = Integer.parseInt(branch.substring(branch.indexOf("/") + 1));
                     result.add(pull);
                 }
@@ -115,7 +109,6 @@ public class TeamCityApi {
         HttpGet get = null;
         try {
             get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,canceled:any,failedToStart:any,count:1");
-            includeAuthentication(get);
             get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             get.addHeader("Accept", "application/json");
             final HttpResponse execute = httpClient.execute(get);
@@ -148,7 +141,6 @@ public class TeamCityApi {
         HttpGet get = null;
         try {
             get = new HttpGet(baseUrl + "/app/rest/builds/id:" + id);
-            includeAuthentication(get);
             get.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             get.addHeader("Accept", "application/json");
             final HttpResponse execute = httpClient.execute(get);
@@ -202,7 +194,6 @@ public class TeamCityApi {
         HttpPost post = null;
         try {
             post = new HttpPost(baseUrl + "/app/rest/buildQueue");
-            includeAuthentication(post);
             post.setHeader(new BasicHeader(HttpHeaders.ACCEPT_ENCODING, "UTF-8"));
             post.setHeader(new BasicHeader(HttpHeaders.CONTENT_TYPE, "application/json"));
             ModelNode build = new ModelNode();
@@ -234,9 +225,5 @@ public class TeamCityApi {
             }
 
         }
-    }
-
-    private void includeAuthentication(HttpRequest request) throws IOException {
-        //request.addHeader(BasicScheme.authenticate(new UsernamePasswordCredentials(username, password), "UTF-8", false));
     }
 }
