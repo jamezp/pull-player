@@ -39,7 +39,6 @@ import org.jboss.dmr.ModelNode;
 public class GitHubApi {
     private static final String GITHUB_API_URL = "https://api.github.com";
     private final Path cacheFileName = Util.BASE_DIR.toPath().resolve("github-api.cache");
-    private static final int PAGE_LIMIT = 10000;
     private final CloseableHttpClient httpClient;
     private final String baseUrl;
     private final boolean dryRun;
@@ -53,26 +52,6 @@ public class GitHubApi {
     }
 
     private Properties getCache() {
-        /*DiskStoreConfiguration diskStoreConfiguration = new DiskStoreConfiguration();
-        diskStoreConfiguration.setPath(Util.BASE_DIR + File.separator + fileName);
-
-        // Already created a configuration object ...
-        Configuration configuration = new Configuration();
-        configuration.addDiskStore(diskStoreConfiguration);
-        CacheConfiguration cc = new CacheConfiguration();
-        PersistenceConfiguration pc = new PersistenceConfiguration();
-        pc.setStrategy(PersistenceConfiguration.Strategy.LOCALRESTARTABLE.name());
-        //cc.persistence(pc);
-        cc.setDiskPersistent(true);
-        //cc.internalSetDiskCapacity();
-        cc.setMaxBytesLocalHeap(1024L * 1024L * 5L); //5mb
-        cc.setName("github-api");
-        configuration.addCache(cc);
-        CacheManager mgr = new CacheManager(configuration);
-
-        // create the cache called "hello-world"
-
-        return mgr.getCache("github-api");*/
         Properties p = new Properties();
         if (Files.exists(cacheFileName)) {
             try (Reader r = Files.newBufferedReader(cacheFileName, StandardCharsets.UTF_8)) {
@@ -85,6 +64,7 @@ public class GitHubApi {
         if (p.size()> 200){
             System.out.println("Size of cache got too big, clearing out cache");
             p.clear();
+            cacheDirty.set(true);
         }
         return p;
     }
@@ -100,7 +80,7 @@ public class GitHubApi {
                 final HttpResponse response = execute(get);
                 url = nextLink(response);
                 if (notModified(response)) {
-                    continue;
+                    return null;
                 }
                 ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
                 List<ModelNode> modelNodes = node.asList();
@@ -183,7 +163,7 @@ public class GitHubApi {
         final HttpPost post = new HttpPost(requestUrl);
         try {
             post.setEntity(new StringEntity("{\"body\": \"" + comment + "\"}"));
-            final HttpResponse execute = execute(post);
+            execute(post);
         } catch (Exception e) {
             e.printStackTrace(System.err);
         } finally {

@@ -74,6 +74,10 @@ public class PullPlayer {
             Instant retriggerDate = null;
             boolean whitelistNotify = true;
             List<Comment> comments = gitHubApi.getComments(pullNumber);
+            if (comments == null) {
+                //no new comments on pull request no need to process it.
+                continue;
+            }
             for (Comment comment : comments) {
                 if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
                     retrigger = false;
@@ -102,8 +106,8 @@ public class PullPlayer {
                     continue;
                 }
             }
-            //comments.isEmpty is true when we got cached response so we should react on it
-            if (!comments.isEmpty() && job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
+
+            if (job == null & !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
                 System.out.println("User not whitelisted, user: " + user);
                 continue;
             }

@@ -1,10 +1,15 @@
 package org.jboss.pull.player;
 
 import java.net.HttpURLConnection;
+import java.security.SecureRandom;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.X509TrustManager;
 
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpResponse;
@@ -14,6 +19,8 @@ import org.apache.http.client.CredentialsProvider;
 import org.apache.http.client.HttpClient;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
+import org.apache.http.conn.ssl.NoopHostnameVerifier;
+import org.apache.http.conn.ssl.SSLConnectionSocketFactory;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.BasicCredentialsProvider;
 import org.apache.http.impl.client.HttpClients;
@@ -29,11 +36,33 @@ public class TeamCityApi {
     private final Map<String, String> branchMapping = new HashMap<>();
     private final boolean dryRun;
 
-    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun) {
-        this.baseUrl = "http://" + host + ":" + port + "/httpAuth";
+    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun) throws Exception {
+        if (port == 443) {
+            this.baseUrl = "https://" + host + "/httpAuth";
+        } else {
+            this.baseUrl = "http://" + host + ":" + port + "/httpAuth";
+        }
        /* this.username = username;
         this.password = password;*/
         this.dryRun = dryRun;
+
+        SSLContext context = SSLContext.getInstance("TLS");
+        context.init(null, new X509TrustManager[]{new X509TrustManager() {
+            public void checkClientTrusted(X509Certificate[] chain,
+                                           String authType) throws CertificateException {
+            }
+
+            public void checkServerTrusted(X509Certificate[] chain,
+                                           String authType) throws CertificateException {
+            }
+
+            public X509Certificate[] getAcceptedIssuers() {
+                return new X509Certificate[0];
+            }
+        }}, new SecureRandom());
+        SSLConnectionSocketFactory socketFactory = new SSLConnectionSocketFactory(context, new NoopHostnameVerifier());
+
+
 
         CredentialsProvider credsProvider = new BasicCredentialsProvider();
         credsProvider.setCredentials(
@@ -41,6 +70,8 @@ public class TeamCityApi {
                 new UsernamePasswordCredentials(username, password));
         httpClient = HttpClients.custom()
                 .setDefaultCredentialsProvider(credsProvider)
+                .setSSLHostnameVerifier(new NoopHostnameVerifier())
+                .setSSLSocketFactory(socketFactory)
                 .build();
         parseBranchMapping(branchMapping);
     }
