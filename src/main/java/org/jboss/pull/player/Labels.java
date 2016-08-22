@@ -40,6 +40,8 @@ import java.util.Properties;
  */
 class Labels {
     private final Map<String, String> replacements;
+    private String rebaseThis;
+    private String fixMe;
 
     /**
      * Creates the labels looking up the labels in the properties.
@@ -49,6 +51,7 @@ class Labels {
         final String prop = properties.getProperty("issue.labels");
         if (prop == null) {
             replacements = Collections.emptyMap();
+            return;
         } else {
             final String[] labels = prop.split(",");
             replacements = new HashMap<>();
@@ -62,6 +65,9 @@ class Labels {
                 }
             }
         }
+
+        this.rebaseThis = properties.getProperty("issue.label.rebase");
+        this.fixMe = properties.getProperty("issue.label.fixme");
     }
 
     /**
@@ -86,4 +92,11 @@ class Labels {
         return replacements.get(label);
     }
 
+    public String getRebaseThis() {
+        return rebaseThis;
+    }
+
+    public String getFixMe() {
+        return fixMe;
+    }
 }

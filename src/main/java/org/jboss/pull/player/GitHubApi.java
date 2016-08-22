@@ -1,5 +1,7 @@
 package org.jboss.pull.player;
 
+import static javafx.scene.input.KeyCode.M;
+
 import java.io.IOException;
 import java.io.Reader;
 import java.net.HttpURLConnection;
@@ -7,19 +9,28 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.sun.tools.internal.ws.processor.model.Model;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpHeaders;
 import org.apache.http.HttpHost;
 import org.apache.http.HttpResponse;
 import org.apache.http.client.AuthCache;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpDelete;
 import org.apache.http.client.methods.HttpGet;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.client.methods.HttpPut;
@@ -32,6 +43,7 @@ import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.message.BasicHeader;
 import org.jboss.dmr.ModelNode;
+import org.jboss.dmr.Property;
 
 /**
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
@@ -42,8 +54,8 @@ public class GitHubApi {
     private final CloseableHttpClient httpClient;
     private final String baseUrl;
     private final boolean dryRun;
-    private final Properties cache = getCache();
     private final AtomicBoolean cacheDirty = new AtomicBoolean(false);
+    private final Properties cache = getCache();
 
     public GitHubApi(String authToken, String repository, boolean dryRun) {
         this.dryRun = dryRun;
@@ -61,7 +73,7 @@ public class GitHubApi {
                 e.printStackTrace(System.out);
             }
         }
-        if (p.size()> 200){
+        if (p.size() > 250) {
             System.out.println("Size of cache got too big, clearing out cache");
             p.clear();
             cacheDirty.set(true);
@@ -69,12 +81,11 @@ public class GitHubApi {
         return p;
     }
 
-    List<Comment> getComments(int number) {
+    List<Comment> getComments(final String commentsUrl) {
         HttpGet get = null;
         List<Comment> comments = new ArrayList<>();
-        int page = 1;
         try {
-            String url = baseUrl + "/issues/" + number + "/comments?page=" + page;
+            String url = commentsUrl;
             while (url != null) {
                 get = new HttpGet(url);
                 final HttpResponse response = execute(get);
@@ -92,8 +103,7 @@ public class GitHubApi {
                     "updated_at" => "2015-09-01T15:35:01Z",
                  */
                 for (ModelNode comment : modelNodes) {
-                    String createdAt = comment.get("created_at").asString();
-                    comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString(), createdAt));
+                    comments.add(create(comment));
                 }
                 get.releaseConnection();
                 get = null;
@@ -115,6 +125,7 @@ public class GitHubApi {
     List<ModelNode> getPullRequests() {
         HttpGet get = null;
         List<ModelNode> result = new ArrayList<>();
+        String lastCheck = cache.getProperty("LAST_CHECK", ZonedDateTime.ofInstant(Instant.EPOCH, ZoneId.systemDefault()).toString());
         try {
             String url = baseUrl + "/pulls?state=open";
             while (url != null) {
@@ -125,8 +136,11 @@ public class GitHubApi {
                     continue;
                 }
                 ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
-                result.addAll(node.asList());
+
+                Instant last = ZonedDateTime.parse(lastCheck).toInstant();
+                result.addAll(filterNonModifiedPullRequests(node.asList(), last));
             }
+            updateLastCheck();
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
@@ -136,6 +150,46 @@ public class GitHubApi {
         }
         return result;
 
+    }
+
+    /**
+     * @return returns all pull requests that might need processing
+     */
+    private ModelNode getPullRequest(String url) {
+        HttpGet get = null;
+        try {
+            get = new HttpGet(url);
+            final HttpResponse response = execute(get);
+            ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
+            return node;
+
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (get != null) {
+                get.releaseConnection();
+            }
+        }
+        return new ModelNode().setEmptyObject();
+
+    }
+
+
+    void updateLastCheck() {
+        cache.putIfAbsent("LAST_CHECK", ZonedDateTime.now().toString());
+    }
+
+    private List<ModelNode> filterNonModifiedPullRequests(List<ModelNode> pulls, Instant lastCheck) {
+        final List<ModelNode> res = new LinkedList<>();
+        for (ModelNode pull : pulls) {
+            String updatedAtString = pull.get("updated_at").asString(); //get timestamp when was PR last updated.
+            Instant updatedAt = ZonedDateTime.parse(updatedAtString).toInstant();
+            if (updatedAt.isAfter(lastCheck)) {
+                res.add(pull);
+            }
+        }
+        return res;
     }
 
     private String nextLink(HttpResponse response) {
@@ -164,6 +218,7 @@ public class GitHubApi {
         try {
             post.setEntity(new StringEntity("{\"body\": \"" + comment + "\"}"));
             execute(post);
+            updateLastCheck();
         } catch (Exception e) {
             e.printStackTrace(System.err);
         } finally {
@@ -181,8 +236,8 @@ public class GitHubApi {
     }
 
 
-    public ModelNode getIssuesWithPullRequests() throws IOException {
-        final ModelNode resultIssues = new ModelNode();
+    public List<ModelNode> getIssuesWithPullRequests() throws IOException {
+        final List<ModelNode> pulls = new LinkedList<>();
         try {
             // Get all the issues for the repository
             String url = baseUrl + "/issues?state=open&filter=all";
@@ -191,24 +246,40 @@ public class GitHubApi {
                 final HttpResponse response = execute(get);
                 url = nextLink(response);
                 if (notModified(response)) { //noting new to do
-                    return new ModelNode();
+                    return Collections.emptyList();
                 }
                 ModelNode responseResult = ModelNode.fromJSONStream(response.getEntity().getContent());
                 for (ModelNode node : responseResult.asList()) {
                     // We only want issues with a pull request
                     if (node.hasDefined("pull_request") && node.hasDefined("labels")) {
-                        // Verify the labels aren't empty
-                        if (!node.get("labels").asList().isEmpty()) {
-                            // The key will be the PR URL
-                            resultIssues.get(node.get("pull_request", "url").asString()).set(node);
+                        String prUrl = node.get("pull_request","url").asString();
+                        ModelNode pr = getPullRequest(prUrl);
+                        for (Property p : pr.asPropertyList()){//lets just copy everything
+                            node.get(p.getName()).set(p.getValue());
                         }
+                        node.remove("user");
+                        node.remove("head");
+                        node.remove("repo");
+                        node.remove("base");
+                        node.remove("_links");
+                        pulls.add(node);
                     }
                 }
             }
         } catch (Exception e) {
             e.printStackTrace(System.err);
         }
-        return resultIssues;
+        return pulls;
+    }
+
+    private ModelNode getLabelsForIssue(final List<ModelNode> allIssues, int number){
+        Optional<ModelNode> res =  allIssues.stream()
+                .filter(node -> node.get("number").asInt() == number)
+                .findFirst();
+        if (res.isPresent()){
+            return res.get().get("labels");
+        }
+        return new ModelNode().setEmptyList();
     }
 
 
@@ -219,7 +290,38 @@ public class GitHubApi {
             return;
         }
         // Build a list of the new labels
-        final StringBuilder sb = new StringBuilder(32).append('[');
+        final String sb = getLabelsArray(labels);
+        try {
+            final HttpPut put = new HttpPut(issueUrl + "/labels");
+            put.setEntity(new StringEntity(sb));
+            execute(put).close();
+
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+    }
+
+    public void addLabels(final String issueUrl, final Collection<String> labels) {
+        System.out.println("adding labels for issue: " + issueUrl + ", labels: " + labels);
+        if (this.dryRun) {
+            System.out.println("Dry run - Not posting to github");
+            return;
+        }
+        // Build a list of the new labels
+        final String sb = getLabelsArray(labels);
+        try {
+            final HttpPost put = new HttpPost(issueUrl + "/labels");
+            put.setEntity(new StringEntity(sb));
+            execute(put).close();
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+    }
+
+
+
+    private String getLabelsArray(Collection<String> labels) {
+        final StringBuilder sb = new StringBuilder(32).append('[').append('\n');
         final int size = labels.size();
         int counter = 0;
         for (String label : labels) {
@@ -227,16 +329,10 @@ public class GitHubApi {
             if (++counter < size) {
                 sb.append(',');
             }
+            sb.append("\n");
         }
         sb.append(']');
-        try {
-            final HttpPut put = new HttpPut(issueUrl + "/labels");
-            put.setEntity(new StringEntity(sb.toString()));
-            execute(put);
-        } catch (Exception e) {
-            e.printStackTrace(System.err);
-        }
-
+        return sb.toString();
     }
 
     private boolean notModified(HttpResponse response) {
@@ -244,7 +340,7 @@ public class GitHubApi {
 
     }
 
-    private HttpResponse execute(final HttpUriRequest request) throws IOException {
+    private CloseableHttpResponse execute(final HttpUriRequest request) throws IOException {
 
         AuthCache authCache = new BasicAuthCache();
         authCache.put(HttpHost.create(GITHUB_API_URL), new BasicScheme());
@@ -258,14 +354,14 @@ public class GitHubApi {
             request.addHeader("If-None-Match", value);
         }
 
-        final HttpResponse response = httpClient.execute(request, context);
+        final CloseableHttpResponse response = httpClient.execute(request, context);
         int responseStatus = response.getStatusLine().getStatusCode();
 
         //System.out.println("Next page for "+request.getURI()+": " + nextLink(response));
         if (responseStatus == HttpURLConnection.HTTP_NOT_MODIFIED) {
             System.out.println("url " + request.getURI() + " is not modified");
         } else {
-            if (responseStatus != HttpURLConnection.HTTP_OK) {
+            if (responseStatus != HttpURLConnection.HTTP_OK && responseStatus != HttpURLConnection.HTTP_NO_CONTENT) {
                 System.err.printf("Could not %s to %s %n\t%s%n", request.getMethod(), request.getURI(), response.getStatusLine());
             }
             if (request.getMethod() == HttpGet.METHOD_NAME) {
@@ -295,4 +391,85 @@ public class GitHubApi {
         httpClient.close();
     }
 
+    private Comment create(ModelNode comment) {
+        String createdAt = comment.get("created_at").asString();
+        return new Comment(comment.get("user", "login").asString(), comment.get("body").asString(), createdAt, comment.get("id").asString());
+    }
+
+
+    List<Comment> getCommentsForIssue(final int issueId) {
+        HttpGet get = null;
+        List<Comment> comments = new ArrayList<>();
+        try {
+            String url = baseUrl + "/issues/" + issueId + "/comments";
+            while (url != null) {
+                get = new HttpGet(url);
+                final HttpResponse response = execute(get);
+                url = nextLink(response);
+                if (notModified(response)) {
+                    return null;
+                }
+                ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
+                List<ModelNode> modelNodes = node.asList();
+                if (modelNodes.size() == 0) {
+                    continue;
+                }
+                for (ModelNode comment : modelNodes) {
+                    //comments.add(new Comment(comment.get("user", "login").asString(), comment.get("body").asString(), createdAt, id));
+                    comments.add(create(comment));
+                }
+                get.releaseConnection();
+                get = null;
+            }
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        } finally {
+            if (get != null) {
+                get.releaseConnection();
+            }
+        }
+
+        return comments;
+    }
+
+    public void deleteComment(Comment comment) {
+        System.out.println(String.format("Deleting comment id: '%s' ",comment.id));
+        if (this.dryRun) {
+            System.out.println("Dry run - Not posting to github");
+            return;
+        }
+        //final String requestUrl = baseUrl + "/issues/" + issue + "/comments/" + comment.id;
+        final String requestUrl = baseUrl + "/issues/comments/" + comment.id;
+
+        final HttpDelete delete = new HttpDelete(requestUrl);
+        try {
+            execute(delete);
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        } finally {
+            delete.abort();
+        }
+    }
+
+
+    public List<ModelNode> getAllIssues() {
+        final List<ModelNode> resultIssues = new LinkedList<>();
+        try {
+            // Get all the issues for the repository
+            String url = baseUrl + "/issues?state=open&filter=all";
+            while (url != null) {
+                final HttpGet get = new HttpGet(url);
+                final HttpResponse response = execute(get);
+                url = nextLink(response);
+                if (notModified(response)) { //noting new to do
+                    return Collections.emptyList();
+                }
+                ModelNode responseResult = ModelNode.fromJSONStream(response.getEntity().getContent());
+                resultIssues.addAll(responseResult.asList());
+            }
+        } catch (Exception e) {
+            e.printStackTrace(System.err);
+        }
+        return resultIssues;
+    }
 }

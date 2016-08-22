@@ -22,19 +22,13 @@
 
 package org.jboss.pull.player;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.io.PrintStream;
-import java.io.PrintWriter;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 
 import org.jboss.dmr.ModelNode;
-import org.jboss.dmr.Property;
 
 /**
  * Process pull requests to determine if the pull request requires a change to the labels.
@@ -42,36 +36,80 @@ import org.jboss.dmr.Property;
  * This class is not thread safe, but also shouldn't matter for now.
  *
  * @author <a href="mailto:jperkins@redhat.com">James R. Perkins</a>
+ * @author Tomaz CErar
  */
-class LabelProcessor {
+public class LabelProcessor {
     private final Path path = Util.BASE_DIR.toPath().resolve("issues.json");
     private final Labels labels;
 
-    private final ModelNode issuesModel;
+    private List<ModelNode> pulls;
     private final PrintStream err = System.err;
     private GitHubApi api;
 
     LabelProcessor(GitHubApi api) {
         this.api = api;
         labels = new Labels();
-        // If the file exists, load it
+       /* // If the file exists, load it
         if (Files.exists(path)) {
             try (final InputStream in = Files.newInputStream(path)) {
-                issuesModel = ModelNode.fromJSONStream(in);
+                pulls = ModelNode.fromJSONStream(in);
             } catch (IOException e) {
-                throw new RuntimeException(e);
+                e.printStackTrace();
+                pulls = new ModelNode();
+                pulls.setEmptyObject();
+
             }
         } else {
             // No file exists, create a new model
-            issuesModel = new ModelNode();
-        }
+            pulls = new ModelNode();
+        }*/
     }
 
     void process(final List<ModelNode> pulls) {
+        final String rebaseThisLabel = this.labels.getRebaseThis();
+        final String fixMeLabel = this.labels.getFixMe();
         for (ModelNode pull : pulls) {
-            add(pull);
+            int number = pull.get("number").asInt();
+            if (!pull.hasDefined("mergeable")) {
+                System.out.println("missing mergable meta data for " + number);
+                continue;
+            }
+            boolean mergeable = pull.get("mergeable").asBoolean();
+            String mergeableState = pull.get("mergeable_state").asString();
+            boolean cleanBuild = "clean".equals(mergeableState);
+            List<String> labels = getLabels(pull);
+            List<String> newLabels = new LinkedList<>();
+            List<String> removedLabels = new LinkedList<>();
+            System.out.println(String.format("pull=%s, mergable=%s, clean=%s, lables=%s", number, mergeable, cleanBuild, labels));
+
+            if (mergeable) {
+                if (labels.contains(rebaseThisLabel)) {
+                    removedLabels.add(rebaseThisLabel);
+                    System.out.println("rebased, remove label "+ number);
+                }
+            } else {
+                if (!labels.contains(rebaseThisLabel)) {
+                    newLabels.add(rebaseThisLabel);
+                    System.out.println("we need to rebase "+ number);
+                }
+            }
+            if (cleanBuild && labels.contains(fixMeLabel)){ //we have clean test of the PR
+                removedLabels.add(fixMeLabel);
+                System.out.println("we need to remove fixme for "+ number);
+            }
+
+            if (!newLabels.isEmpty() && removedLabels.isEmpty()){
+                final String issueUrl = pull.get("issue_url").asString();
+                // Set the new labels
+                api.addLabels(issueUrl, newLabels);
+            }else if (!removedLabels.isEmpty()){
+                final String issueUrl = pull.get("issue_url").asString();
+                labels.removeAll(removedLabels);
+                // Set the new labels
+                api.setLabels(issueUrl, labels);
+            }
         }
-        process();
+
     }
 
     /**
@@ -80,14 +118,15 @@ class LabelProcessor {
      * @param pull the pull request to be processed
      */
     void add(final ModelNode pull) {
-        final int pullNumber = pull.get("number").asInt();
+        /*final int pullNumber = pull.get("number").asInt();
         final String sha1 = pull.get("head", "sha").asString();
         final String issueUrl = pull.get("issue_url").asString();
+        boolean mergeable = pull.get("mergeable").asString().equals("true");
 
         final String key = "pr-" + pullNumber;
 
-        if (issuesModel.hasDefined(key)) {
-            final ModelNode n = issuesModel.get(key);
+        if (pulls.hasDefined(key)) {
+            final ModelNode n = pulls.get(key);
             if (!n.get("sha").asString().equals(sha1)) {
                 // Add the new sha key to be checked during processing
                 n.get("new-sha").set(sha1);
@@ -97,8 +136,9 @@ class LabelProcessor {
             model.get("sha").set(sha1);
             model.get("issue_url").set(issueUrl);
             model.get("pull_request_url").set(pull.get("url"));
-            issuesModel.get(key).set(model);
-        }
+            model.get("mergeable").set(mergeable);
+            pulls.get(key).set(model);
+        }*/
     }
 
     /**
@@ -107,13 +147,14 @@ class LabelProcessor {
      * This should normally only be invoked once as it makes API calls to GitHub.
      */
     void process() {
-        try {
+        /*try {
             // Get all the open issues to lessen the hits to the API
-            final ModelNode openIssues = api.getIssuesWithPullRequests();
+            final List<ModelNode> openIssues = api.getIssuesWithPullRequests();
 
             // Process each issue in the model
-            for (Property property : issuesModel.asPropertyList()) {
+            for (Property property : pulls.asPropertyList()) {
                 final ModelNode value = property.getValue();
+                boolean mergeable = value.get("mergeable").asBoolean();
                 // Get the PR url
                 final String prUrl = value.get("pull_request_url").asString();
                 if (openIssues.hasDefined(prUrl)) {
@@ -123,7 +164,7 @@ class LabelProcessor {
                     final List<String> currentLabels = getLabels(openIssue);
                     // If no labels are present, we can delete the issue
                     if (currentLabels.isEmpty()) {
-                        issuesModel.remove(property.getName());
+                        pulls.remove(property.getName());
                     } else {
                         boolean changeRequired = false;
 
@@ -146,15 +187,15 @@ class LabelProcessor {
                             // Set the new labels
                             api.setLabels(issueUrl, newLabels);
                             // Node needs to be removed
-                            issuesModel.remove(property.getName());
+                            pulls.remove(property.getName());
                         } else if (!changeRequired) {
                             // No change in labels has been required, remove the issue
-                            issuesModel.remove(property.getName());
+                            pulls.remove(property.getName());
                         }
                     }
                 } else {
                     // The issue/PR may be closed, we can just delete it
-                    issuesModel.remove(property.getName());
+                    pulls.remove(property.getName());
                 }
             }
 
@@ -162,11 +203,12 @@ class LabelProcessor {
             try (final PrintWriter writer = new PrintWriter(Files.newBufferedWriter(path, StandardCharsets.UTF_8,
                     StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING,
                     StandardOpenOption.SYNC, StandardOpenOption.CREATE))) {
-                issuesModel.writeJSONString(writer, false);
+                pulls.writeJSONString(writer, false);
             }
         } catch (IOException e) {
             e.printStackTrace(err);
         }
+        */
     }
 
     private List<String> getLabels(final ModelNode issue) {
@@ -180,4 +222,5 @@ class LabelProcessor {
         }
         return result;
     }
+
 }

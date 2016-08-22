@@ -8,13 +8,15 @@ import java.time.ZonedDateTime;
  */
 class Comment {
     //private static final SimpleDateFormat DATE_FORMAT = SimpleDateFormat.
+    final String id;
     final String user;
     final String comment;
     final Instant created;
 
-    Comment(String user, String comment, String createdAt) {
+    Comment(String user, String comment, String createdAt, String id) {
         this.user = user;
         this.comment = comment;
         this.created = ZonedDateTime.parse(createdAt).toInstant();
+        this.id = id;
     }
 }

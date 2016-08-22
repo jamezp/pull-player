@@ -73,37 +73,45 @@ public class PullPlayer {
             boolean retrigger = false;
             Instant retriggerDate = null;
             boolean whitelistNotify = true;
-            List<Comment> comments = gitHubApi.getComments(pullNumber);
-            if (comments == null) {
+
+            String commentsUrl = pull.get("comments_url").asString(); //get url for comments
+            boolean mergeable = pull.get("mergeable").asString().equals("true");
+            System.out.println("mergeable = " + mergeable);
+            System.out.println("mergeable = " + pull.get("mergeable").asString());
+
+            List<Comment> comments = gitHubApi.getComments(commentsUrl);
+            /*if (comments == null) {
                 //no new comments on pull request no need to process it.
                 continue;
-            }
-            for (Comment comment : comments) {
-                if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
-                    retrigger = false;
-                    continue;
-                }
+            }*/
+            if (comments != null) {
+                for (Comment comment : comments) {
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
+                        retrigger = false;
+                        continue;
+                    }
 
-                if (githubLogin.equals(comment.user) && comment.comment.contains("running")) {
-                    retrigger = false;
-                    continue;
-                }
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("running")) {
+                        retrigger = false;
+                        continue;
+                    }
 
-                if (githubLogin.equals(comment.user) && comment.comment.contains("verify this patch")) {
-                    whitelistNotify = false;
-                    continue;
-                }
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("verify this patch")) {
+                        whitelistNotify = false;
+                        continue;
+                    }
 
-                if (whiteList.has(user) && whiteList.has(comment.user) && job != null && retest.matcher(comment.comment).matches()) {
-                    retriggerDate = comment.created;
-                    retrigger = true;
-                    continue;
-                }
+                    if (whiteList.has(user) && whiteList.has(comment.user) && job != null && retest.matcher(comment.comment).matches()) {
+                        retriggerDate = comment.created;
+                        retrigger = true;
+                        continue;
+                    }
 
-                if (!whiteList.has(user) && adminList.has(comment.user) && okToTest.matcher(comment.comment).matches()) {
-                    whiteList.add(user);
-                    retrigger = true;
-                    continue;
+                    if (!whiteList.has(user) && adminList.has(comment.user) && okToTest.matcher(comment.comment).matches()) {
+                        whiteList.add(user);
+                        retrigger = true;
+                        continue;
+                    }
                 }
             }
 
@@ -172,5 +180,34 @@ public class PullPlayer {
 
     protected void cleanup() throws IOException {
         gitHubApi.close();
+    }
+
+    protected void checkRebaseRequired() throws IOException {
+        List<ModelNode> nodes = gitHubApi.getIssuesWithPullRequests();
+        labelProcessor.process(nodes);
+
+    }
+
+    void cleanupComments(int pullId) {
+        List<Comment> comments = gitHubApi.getCommentsForIssue(pullId);
+        System.out.println("All comments on issue "+comments.size());
+        comments.stream()
+                .filter(comment -> comment.user.equals(githubLogin))
+                .filter(comment -> comment.comment.contains("verify this patch"))
+                .forEach(comment -> gitHubApi.deleteComment(comment));
+
+
+    }
+
+    void cleanupComments() {
+        gitHubApi.getAllIssues().stream()
+                .filter(node -> node.get("comments").asInt() > 2)
+                .forEach(node -> {
+                    gitHubApi.getCommentsForIssue(node.get("number").asInt()).stream()
+                            .filter(comment -> comment.user.equals(githubLogin))
+                            .forEach(gitHubApi::deleteComment);
+                });
+
+
     }
 }

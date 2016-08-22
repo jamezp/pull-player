@@ -190,13 +190,22 @@ public class TeamCityApi {
             }
             System.out.println("Hash for last build matches: " + found);
             if (found) {
+                String number = build.get("number").asString();
+                final int num;
+                try {//number can be N/A if it is no longer present on server
+                    num = Integer.parseInt(number);
+                } catch (NumberFormatException e) {
+                    return null;
+                }
+
+
                 /*
                     "queuedDate" => "20150903T162504+0200",
                     "startDate" => "20150903T172007+0200",
                     "finishDate" => "20150903T172008+0200",
                  */
 
-                return new TeamCityBuild(build.get("number").asInt(), build.get("status").asString(),
+                return new TeamCityBuild(num, build.get("status").asString(),
                         build.hasDefined("running") && build.get("running").asBoolean(),
                         build.get("queuedDate").asString());
             } else {
