@@ -12,6 +12,15 @@
 # jenkins.publish.url=http://my-server.lab.eng.bos.redhat.com/jenkins/job
 # jenkins.publish.public.url=http://hudson.jboss.org/job
 
+# TeamCity Configuration
+# teamcity.host=my.teamcity.host
+# teamcity.port=443
+# teamcity.build.branch-mapping=master=>SomeTeamCityBuildJobName,1.x=>SomeOtherBuildJobNameFrom1XBranch
+# teamcity.user=some-user
+# teamcity.password=xxxxx
+# disable the TeamCity integration so other integrations can be tested (GitHub etc.).
+# teamcity.disabled=true|false
+
 # Github Authentication Info
 # github.login=my-github-project-user
 # github.token=<Generate one using the Token API>
