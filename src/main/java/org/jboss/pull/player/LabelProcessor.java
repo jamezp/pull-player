@@ -44,7 +44,7 @@ public class LabelProcessor {
 
     private List<ModelNode> pulls;
     private final PrintStream err = System.err;
-    private GitHubApi api;
+    private final GitHubApi api;
 
     LabelProcessor(GitHubApi api) {
         this.api = api;

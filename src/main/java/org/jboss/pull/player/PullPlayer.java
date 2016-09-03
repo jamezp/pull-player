@@ -32,10 +32,7 @@ public class PullPlayer {
         String password = Util.require("teamcity.password");
         gitHubApi = new GitHubApi(githubToken, githubRepo, dryRun);
 
-        boolean disabled = false;
-        if (Util.optionalBoolean("teamcity.disabled", false) != false) {
-            disabled = true;
-        }
+        final boolean disabled = Util.optionalBoolean("teamcity.disabled", false);
         teamCityApi = new TeamCityApi(teamcityHost, teamcityPort, user, password, teamcityBranchMapping, dryRun, disabled);
         labelProcessor = new LabelProcessor(gitHubApi);
     }
@@ -115,7 +112,6 @@ public class PullPlayer {
                         whiteList.add(user);
                         retriggerDate = comment.created;
                         retrigger = true;
-                        continue;
                     }
                 }
             } else {
