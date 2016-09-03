@@ -1,7 +1,5 @@
 package org.jboss.pull.player;
 
-import static javafx.scene.input.KeyCode.M;
-
 import java.io.IOException;
 import java.io.Reader;
 import java.net.HttpURLConnection;
@@ -22,7 +20,6 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.sun.tools.internal.ws.processor.model.Model;
 import org.apache.http.Header;
 import org.apache.http.HeaderElement;
 import org.apache.http.HttpHeaders;
@@ -219,9 +216,9 @@ public class GitHubApi {
             post.setEntity(new StringEntity("{\"body\": \"" + comment + "\"}"));
             execute(post);
             updateLastCheck();
+            post.completed();
         } catch (Exception e) {
             e.printStackTrace(System.err);
-        } finally {
             post.abort();
         }
     }
@@ -361,7 +358,7 @@ public class GitHubApi {
         if (responseStatus == HttpURLConnection.HTTP_NOT_MODIFIED) {
             System.out.println("url " + request.getURI() + " is not modified");
         } else {
-            if (responseStatus != HttpURLConnection.HTTP_OK && responseStatus != HttpURLConnection.HTTP_NO_CONTENT) {
+            if (responseStatus != HttpURLConnection.HTTP_CREATED && responseStatus != HttpURLConnection.HTTP_OK && responseStatus != HttpURLConnection.HTTP_NO_CONTENT) {
                 System.err.printf("Could not %s to %s %n\t%s%n", request.getMethod(), request.getURI(), response.getStatusLine());
             }
             if (request.getMethod() == HttpGet.METHOD_NAME) {

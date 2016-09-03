@@ -31,7 +31,12 @@ public class PullPlayer {
         String user = Util.require("teamcity.user");
         String password = Util.require("teamcity.password");
         gitHubApi = new GitHubApi(githubToken, githubRepo, dryRun);
-        teamCityApi = new TeamCityApi(teamcityHost, teamcityPort, user, password, teamcityBranchMapping, dryRun);
+
+        boolean disabled = false;
+        if (Util.optionalBoolean("teamcity.disabled", false) != false) {
+            disabled = true;
+        }
+        teamCityApi = new TeamCityApi(teamcityHost, teamcityPort, user, password, teamcityBranchMapping, dryRun, disabled);
         labelProcessor = new LabelProcessor(gitHubApi);
     }
 
@@ -80,10 +85,9 @@ public class PullPlayer {
             System.out.println("mergeable = " + pull.get("mergeable").asString());
 
             List<Comment> comments = gitHubApi.getComments(commentsUrl);
-            /*if (comments == null) {
-                //no new comments on pull request no need to process it.
-                continue;
-            }*/
+
+            // comments == null indicates a NOT-MODIFIED response. A new PR will have an empty
+            // but not null comments collection.
             if (comments != null) {
                 for (Comment comment : comments) {
                     if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
@@ -109,13 +113,18 @@ public class PullPlayer {
 
                     if (!whiteList.has(user) && adminList.has(comment.user) && okToTest.matcher(comment.comment).matches()) {
                         whiteList.add(user);
+                        retriggerDate = comment.created;
                         retrigger = true;
                         continue;
                     }
                 }
+            } else {
+                // not modified since last time we checked the comments
+                whitelistNotify = false;
+                retrigger = false;
             }
 
-            if (job == null & !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
+            if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
                 System.out.println("User not whitelisted, user: " + user);
                 continue;
             }

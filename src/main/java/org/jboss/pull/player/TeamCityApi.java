@@ -35,8 +35,9 @@ public class TeamCityApi {
     private final String baseUrl;
     private final Map<String, String> branchMapping = new HashMap<>();
     private final boolean dryRun;
+    private final boolean disabled;
 
-    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun) throws Exception {
+    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun, boolean disabled) throws Exception {
         if (port == 443) {
             this.baseUrl = "https://" + host + "/httpAuth";
         } else {
@@ -45,7 +46,7 @@ public class TeamCityApi {
        /* this.username = username;
         this.password = password;*/
         this.dryRun = dryRun;
-
+        this.disabled = disabled;
         SSLContext context = SSLContext.getInstance("TLS");
         context.init(null, new X509TrustManager[]{new X509TrustManager() {
             public void checkClientTrusted(X509Certificate[] chain,
@@ -76,6 +77,10 @@ public class TeamCityApi {
         parseBranchMapping(branchMapping);
     }
 
+    public TeamCityApi(String host, int port, String username, String password, String branchMapping, boolean dryRun) throws Exception {
+        this(host, port, username, password, branchMapping, dryRun, false);
+    }
+
     private void parseBranchMapping(String mappings) {
         for (String mapping : mappings.split(",")) {
             String[] parts = mapping.split("=>");
@@ -86,6 +91,11 @@ public class TeamCityApi {
 
     private List<Integer> getQueuedBuildsInternally(String buildTypeId) {
         List<Integer> result = new LinkedList<>();
+
+        if (disabled) {
+            System.err.printf("Warning: TeamCity has been disabled via player.properties no queued build information is available.\n");
+            return result;
+        }
         HttpGet get = null;
         try {
             //get = new HttpGet(baseUrl + "/app/rest/builds?locator=buildType:" + buildTypeId + ",branch:name:pull/" + pull + ",running:any,count:1");
@@ -125,6 +135,10 @@ public class TeamCityApi {
 
     List<Integer> getQueuedBuilds() {
         List<Integer> result = new LinkedList<>();
+        if (disabled) {
+            System.err.printf("Warning: TeamCity has been disabled via player.properties no queued build information is available.\n");
+            return result;
+        }
         for (String buildType : branchMapping.values()) {
             result.addAll(getQueuedBuildsInternally(buildType));
         }
@@ -136,6 +150,12 @@ public class TeamCityApi {
     }
 
     public TeamCityBuild findBuild(int pull, String hash, String branch) {
+        if (disabled) {
+            System.err.printf("Warning: TeamCity has been disabled via player.properties, dummy build information will be used.\n");
+            return null;
+            //return new TeamCityBuild(0, "disabled", false, "20160101T130000+0000");
+        }
+
         String buildTypeId = branchMapping.get(branch);
         HttpGet get = null;
         try {
@@ -224,6 +244,10 @@ public class TeamCityApi {
     }
 
     void triggerJob(int pull, String sha1, String branch) {
+        if (disabled) {
+            System.err.printf("Warning: TeamCity has been disabled via player.properties, build will not be triggered.\n");
+            return;
+        }
         System.out.println("triggering job for pull = " + pull);
         String buildTypeId = branchMapping.get(branch);
         if (dryRun) {

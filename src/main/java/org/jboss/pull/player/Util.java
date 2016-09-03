@@ -75,8 +75,14 @@ class Util {
         final String result = PropertiesHolder.PROPERTIES.getProperty(name);
         if (result == null)
             throw new RuntimeException(name + " must be specified in player.properties");
-
         return result;
+    }
+
+    static boolean optionalBoolean(final String name, final boolean defaultValue) {
+        final String result = PropertiesHolder.PROPERTIES.getProperty(name);
+        if (result == null)
+            return defaultValue;
+        return Boolean.parseBoolean(result.trim());
     }
 
     private static class PropertiesHolder {
