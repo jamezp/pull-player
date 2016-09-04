@@ -157,10 +157,7 @@ public class GitHubApi {
         try {
             get = new HttpGet(url);
             final HttpResponse response = execute(get);
-            ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
-            return node;
-
-
+            return ModelNode.fromJSONStream(response.getEntity().getContent());
         } catch (IOException e) {
             e.printStackTrace();
         } finally {
