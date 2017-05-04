@@ -19,6 +19,7 @@ public class PullPlayer {
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
     private final LabelProcessor labelProcessor;
+    private final boolean whitelistEnabled;
     private String githubLogin;
 
     protected PullPlayer(final boolean dryRun) throws Exception {
@@ -33,6 +34,8 @@ public class PullPlayer {
         gitHubApi = new GitHubApi(githubToken, githubRepo, dryRun);
 
         final boolean disabled = Util.optionalBoolean("teamcity.disabled", false);
+        this.whitelistEnabled = Util.optionalBoolean("whitelist.enabled", true);
+        System.out.println("White list enabled: " + whitelistEnabled);
         teamCityApi = new TeamCityApi(teamcityHost, teamcityPort, user, password, teamcityBranchMapping, dryRun, disabled);
         labelProcessor = new LabelProcessor(gitHubApi);
     }
@@ -78,8 +81,7 @@ public class PullPlayer {
 
             String commentsUrl = pull.get("comments_url").asString(); //get url for comments
             boolean mergeable = pull.get("mergeable").asString().equals("true");
-            System.out.println("mergeable = " + mergeable);
-            System.out.println("mergeable = " + pull.get("mergeable").asString());
+
 
             List<Comment> comments = gitHubApi.getComments(commentsUrl);
 
@@ -120,9 +122,11 @@ public class PullPlayer {
                 retrigger = false;
             }
 
-            if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
-                System.out.println("User not whitelisted, user: " + user);
-                continue;
+            if (whitelistEnabled) {
+                if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
+                    System.out.println("User not whitelisted, user: " + user);
+                    continue;
+                }
             }
             TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
 
