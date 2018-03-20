@@ -10,7 +10,7 @@ public class Cleaner {
         PullPlayer player = new PullPlayer(dry);
         System.out.println("Starting at: " + PullPlayer.getTime());
         try {
-            //player.cleanupComments(8852);
+            //player.cleanupComments(3047);
             player.cleanupComments();
         } catch (Exception e) {
             e.printStackTrace(System.err);

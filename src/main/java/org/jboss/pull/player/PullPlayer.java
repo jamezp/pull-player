@@ -130,7 +130,7 @@ public class PullPlayer {
             }
             TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
 
-            System.out.println("retrigger = " + retrigger);
+            System.out.println("re trigger = " + retrigger);
             if (retrigger) {
                 if (build != null && build.getQueuedDate().isAfter(retriggerDate)) {
                     System.out.println("Not triggering as newer build already exists");
