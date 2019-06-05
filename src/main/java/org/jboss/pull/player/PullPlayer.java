@@ -83,6 +83,7 @@ public class PullPlayer {
             boolean retriggerFailed = false;
             Instant retriggerDate = null;
             boolean whitelistNotify = true;
+            String commentId = "";
 
             String commentsUrl = pull.get("comments_url").asString(); //get url for comments
             boolean mergeable = pull.get("mergeable").asString().equals("true");
@@ -94,21 +95,7 @@ public class PullPlayer {
             // but not null comments collection.
             if (comments != null) {
                 for (Comment comment : comments) {
-                    if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
-                        retrigger = false;
-                        continue;
-                    }
-
-                    if (githubLogin.equals(comment.user) && comment.comment.contains("running")) {
-                        retrigger = false;
-                        continue;
-                    }
-
-                    if (githubLogin.equals(comment.user) && comment.comment.contains("verify this patch")) {
-                        whitelistNotify = false;
-                        continue;
-                    }
-
+                    commentId = comment.id;
                     if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
                         retrigger = false;
                         help = true;
@@ -133,6 +120,23 @@ public class PullPlayer {
                         retrigger = false;
                         retriggerFailed = true;
                     }
+
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("triggering")) {
+                        retrigger = false;
+                        continue;
+                    }
+
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("running")) {
+                        retrigger = false;
+                        continue;
+                    }
+
+                    if (githubLogin.equals(comment.user) && comment.comment.contains("verify this patch")) {
+                        whitelistNotify = false;
+                        help=true;
+                        continue;
+                    }
+
                 }
             } else {
                 // not modified since last time we checked the comments
@@ -140,10 +144,11 @@ public class PullPlayer {
                 retrigger = false;
             }
 
-            if (help) {
+            if (help && (! "".equals(commentId))) {
                 StringBuilder buf = new StringBuilder();
                 buf.append(help());
                 gitHubApi.postComment(pullNumber, buf.toString());
+                System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
                 continue;
             }
 
@@ -194,7 +199,7 @@ public class PullPlayer {
             System.out.printf("Skipping %s\n", user);
             if (notify) {
                 StringBuilder buf = new StringBuilder();
-                buf.append("Hello, " + user + ". I'm waiting for one of the admins to verify this patch with " + Command.OK_TO_TEST.getCommand() + " in a comment.\n");
+                buf.append("<p>Hello, " + user + ". I'm waiting for one of the admins to verify this patch with " + Command.OK_TO_TEST.getCommand() + " in a comment.</p>");
                 buf.append(help());
                 gitHubApi.postComment(pullNumber, buf.toString());
             }
@@ -206,10 +211,10 @@ public class PullPlayer {
 
     public static String help() {
         StringBuilder buf = new StringBuilder();
-        buf.append("Available Commands:\n");
+        buf.append("<p>Available Commands:</p>");
         for (Command c : Command.values()) {
             if (c.enabled()) {
-                buf.append("\t" + c.getCommand() + " : " + c.getDescription() + "\n");
+                buf.append("<p><b>" + c.getCommand() + "</b> " + c.getDescription() + "</p>");
             }
         }
         return buf.toString();

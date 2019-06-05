@@ -2,10 +2,10 @@ package org.jboss.pull.player;
 
 public enum Command {
 
-    HELP("/help", "Display help text."),
-    OK_TO_TEST ("/ok-to-test", "Add the user to the approved list of testers and execute the tests."),
-    RETEST_FAILED("/retest-failed", "Re-execute only the failed tests.", false),
-    RETEST("/retest", "Re-execute all tests.");
+    HELP("/help", "Display this help text."),
+    OK_TO_TEST ("/ok-to-test", "Add the user to the approved list of testers and run tests."),
+    RETEST_FAILED("/retest-failed", "Rerun only the failed tests.", false),
+    RETEST("/retest", "Rerun all tests.");
 
     private boolean enabled = false;
     private final String command;
