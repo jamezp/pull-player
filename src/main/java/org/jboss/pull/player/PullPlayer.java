@@ -14,8 +14,11 @@ import org.jboss.dmr.ModelNode;
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class PullPlayer {
+
+    // old control strings, deprecated
     private static final Pattern okToTest = Pattern.compile(".*ok\\W+to\\W+test.*", Pattern.DOTALL);
     private static final Pattern retest = Pattern.compile(".*retest\\W+this\\W+please.*", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
+
     private final GitHubApi gitHubApi;
     private final TeamCityApi teamCityApi;
     private final LabelProcessor labelProcessor;
@@ -75,7 +78,9 @@ public class PullPlayer {
 
             String job = Jobs.getCompletedJob(sha1);
 
+            boolean help = false;
             boolean retrigger = false;
+            boolean retriggerFailed = false;
             Instant retriggerDate = null;
             boolean whitelistNotify = true;
 
@@ -104,16 +109,29 @@ public class PullPlayer {
                         continue;
                     }
 
-                    if (whiteList.has(user) && whiteList.has(comment.user) && job != null && retest.matcher(comment.comment).matches()) {
+                    if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
+                        retrigger = false;
+                        help = true;
+                        continue;
+                    }
+
+                    if (whiteList.has(user) && whiteList.has(comment.user) && job != null && (retest.matcher(comment.comment).matches() || comment.comment.startsWith(Command.RETEST.getCommand()))) {
                         retriggerDate = comment.created;
                         retrigger = true;
                         continue;
                     }
 
-                    if (!whiteList.has(user) && adminList.has(comment.user) && okToTest.matcher(comment.comment).matches()) {
+                    if (!whiteList.has(user) && adminList.has(comment.user) && okToTest.matcher(comment.comment).matches() || comment.comment.startsWith(Command.OK_TO_TEST.getCommand())) {
                         whiteList.add(user);
                         retriggerDate = comment.created;
                         retrigger = true;
+                    }
+
+                    if (!whiteList.has(user) && adminList.has(comment.user) && comment.comment.startsWith(Command.RETEST_FAILED.getCommand())) {
+                        whiteList.add(user);
+                        retriggerDate = comment.created;
+                        retrigger = false;
+                        retriggerFailed = true;
                     }
                 }
             } else {
@@ -122,15 +140,22 @@ public class PullPlayer {
                 retrigger = false;
             }
 
+            if (help) {
+                StringBuilder buf = new StringBuilder();
+                buf.append(help());
+                gitHubApi.postComment(pullNumber, buf.toString());
+                continue;
+            }
+
             if (whitelistEnabled) {
                 if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
-                    System.out.println("User not whitelisted, user: " + user);
+                    System.out.println("User not on approved tester list, user: " + user);
                     continue;
                 }
             }
             TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
 
-            System.out.println("re trigger = " + retrigger);
+            System.out.println("retrigger = " + retrigger);
             if (retrigger) {
                 if (build != null && build.getQueuedDate().isAfter(retriggerDate)) {
                     System.out.println("Not triggering as newer build already exists");
@@ -168,12 +193,26 @@ public class PullPlayer {
         if (!whiteList.has(user)) {
             System.out.printf("Skipping %s\n", user);
             if (notify) {
-                gitHubApi.postComment(pullNumber, "Can one of the admins verify this patch?");
+                StringBuilder buf = new StringBuilder();
+                buf.append("Hello, " + user + ". I'm waiting for one of the admins to verify this patch with " + Command.OK_TO_TEST.getCommand() + " in a comment.\n");
+                buf.append(help());
+                gitHubApi.postComment(pullNumber, buf.toString());
             }
             return false;
         }
 
         return true;
+    }
+
+    public static String help() {
+        StringBuilder buf = new StringBuilder();
+        buf.append("Available Commands:\n");
+        for (Command c : Command.values()) {
+            if (c.enabled()) {
+                buf.append("\t" + c.getCommand() + " : " + c.getDescription() + "\n");
+            }
+        }
+        return buf.toString();
     }
 
     protected void checkPullRequests() {
