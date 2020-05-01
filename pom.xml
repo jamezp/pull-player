@@ -12,19 +12,19 @@
 
     <groupId>pull-player</groupId>
     <artifactId>pull-player</artifactId>
-    <version>3.0</version>
+    <version>3.1</version>
 
 
     <dependencies>
         <dependency>
             <groupId>org.jboss</groupId>
             <artifactId>jboss-dmr</artifactId>
-            <version>1.5.0.Final</version>
+            <version>1.5.1.Final</version>
         </dependency>
         <dependency>
           <groupId>org.apache.httpcomponents</groupId>
           <artifactId>httpclient</artifactId>
-          <version>4.5.2</version>
+          <version>4.5.9</version>
         </dependency>
     </dependencies>
 
@@ -57,21 +57,4 @@
         </plugins>
 
     </build>
-
-    <repositories>
-        <repository>
-            <id>jboss-public-repository-group</id>
-            <name>JBoss Public Repository Group</name>
-            <url>http://repository.jboss.org/nexus/content/groups/public/</url>
-            <layout>default</layout>
-            <releases>
-                <enabled>true</enabled>
-                <updatePolicy>never</updatePolicy>
-            </releases>
-            <snapshots>
-                <enabled>true</enabled>
-                <updatePolicy>never</updatePolicy>
-            </snapshots>
-        </repository>
-    </repositories>
 </project>

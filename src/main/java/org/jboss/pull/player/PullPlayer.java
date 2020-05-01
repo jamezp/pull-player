@@ -60,6 +60,7 @@ public class PullPlayer {
             System.out.println("---------------------------------------------------------------------------------");
             int pullNumber = pull.get("number").asInt();
             String user = pull.get("user", "login").asString();
+            // note this sha is the commit id of the PR, not the test merge sha, that is fetched below.
             String sha1 = pull.get("head", "sha").asString();
             String branch = pull.get("base", "ref").asString();
             if (sha1 == null) {
@@ -76,8 +77,6 @@ public class PullPlayer {
             // Add the pull to the label processor
             labelProcessor.add(pull);
 
-            String job = Jobs.getCompletedJob(sha1);
-
             boolean help = false;
             boolean retrigger = false;
             boolean retriggerFailed = false;
@@ -85,12 +84,34 @@ public class PullPlayer {
             boolean whitelistNotify = true;
             String commentId = "";
 
+            ModelNode prDetails = gitHubApi.getPullRequestDetails(pullNumber);
+
+            // not all pr information is available on the pr list, and in order for a test merge to be created
+            // the pr details have to be either fetched or looked at in the browser. If mergeable is false or null
+            // then the pr is skipped and rechecked on the next run
+            // see: https://developer.github.com/v3/git/#checking-mergeability-of-pull-requests
+            boolean mergeable = false;
+            String mergeCommitSha = null;
+
+            if (prDetails != null) {
+                mergeable = prDetails.get("mergeable").asString("false").equals("true");
+            }
+
+            // this is the test commit created that is a merge onto the branch the pr has been opened against.
+            // see: https://developer.github.com/v3/pulls/#response-1
+            // this also need the vcs root to be configured against +:refs/(pull/*)/merge in order to match
+            // if the PR is marked as mergeable and the mergeCommitSha is not null or missing, the /merge test ref
+            // is present and the PR can be tested
+            if (mergeable) {
+                mergeCommitSha = prDetails.get("merge_commit_sha").asString();
+            }
             String commentsUrl = pull.get("comments_url").asString(); //get url for comments
-            boolean mergeable = pull.get("mergeable").asString().equals("true");
-
-
             List<Comment> comments = gitHubApi.getComments(commentsUrl);
 
+            String job = null;
+            if (mergeCommitSha != null) {
+                job = Jobs.getCompletedJob(mergeCommitSha);
+            }
             // comments == null indicates a NOT-MODIFIED response. A new PR will have an empty
             // but not null comments collection.
             if (comments != null) {
@@ -158,7 +179,16 @@ public class PullPlayer {
                     continue;
                 }
             }
-            TeamCityBuild build = teamCityApi.findBuild(pullNumber, sha1, branch);
+
+            if (mergeable == true && mergeCommitSha == null) {
+                System.out.println("No valid merge_commit_sha found on PR, skipping.");
+                continue;
+            }
+            System.out.printf("merge commit sha: %s\n", mergeCommitSha);
+            TeamCityBuild build = null;
+            if (mergeCommitSha != null) {
+                build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
+            }
 
             System.out.println("retrigger = " + retrigger);
             if (retrigger) {
@@ -171,7 +201,7 @@ public class PullPlayer {
                     System.out.println("Build already running");
                 } else {
                     job = null;
-                    Jobs.remove(sha1);
+                    Jobs.remove(mergeCommitSha);
                 }
             }
 
@@ -182,12 +212,12 @@ public class PullPlayer {
 
             if (build != null && !retrigger) {
                 if (build.getStatus() != null) {
-                    Jobs.storeCompletedJob(sha1, pullNumber, build.getBuild());
+                    Jobs.storeCompletedJob(mergeCommitSha, pullNumber, build.getBuild());
                 } else {
                     System.out.println("In progress, skipping: " + pullNumber);
                 }
-            } else if (noBuildPending(pullNumber, queue)) {
-                teamCityApi.triggerJob(pullNumber, sha1, branch);
+            } else if (mergeCommitSha != null && noBuildPending(pullNumber, queue)) {
+                teamCityApi.triggerJob(pullNumber, mergeCommitSha, branch);
             } else {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
