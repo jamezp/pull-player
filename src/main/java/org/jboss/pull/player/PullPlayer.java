@@ -111,6 +111,10 @@ public class PullPlayer {
             String job = null;
             if (mergeCommitSha != null) {
                 job = Jobs.getCompletedJob(mergeCommitSha);
+                // also look for a previously completed job via sha1, this is for compatability with how we managed the queue previously
+                if (job == null) {
+                    job = Jobs.getCompletedJob(sha1);
+                }
             }
             // comments == null indicates a NOT-MODIFIED response. A new PR will have an empty
             // but not null comments collection.
@@ -188,9 +192,15 @@ public class PullPlayer {
             TeamCityBuild build = null;
             if (mergeCommitSha != null) {
                 build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
+                if (build != null) {
+                    System.out.println("mergeCommitSha build: " + build.toString());
+                }
                 // for legacy compatability and to avoid requeing all jobs, we check if build is null for a build with the previous sha as well
                 if (build == null) {
                     build = teamCityApi.findBuild(pullNumber, sha1, branch);
+                    if (build != null) {
+                        System.out.println("sha1 build: " + build.toString());
+                    }
                 }
             }
 
@@ -252,6 +262,19 @@ public class PullPlayer {
             }
         }
         return buf.toString();
+    }
+
+    public void dumpPullRequestData(final int prNumber) {
+        ModelNode node = gitHubApi.getPullRequestDetails(prNumber);
+        System.out.println("Dumping PR: " + prNumber);
+        System.out.println(node.toJSONString(false));
+        boolean mergeable = false;
+        String mergeablestr = node.get("mergeable").asString("");
+        System.out.println("mergeable on PR details: mergeable = " + mergeablestr);
+        mergeable = node.get("mergeable").asString("false").equals("true");
+        System.out.println("Using translated mergeable value of: " + mergeable);
+        String mergeCommitSha = node.get("merge_commit_sha").asString();
+        System.out.println("merge_commit_sha: " + mergeCommitSha);
     }
 
     protected void checkPullRequests() {

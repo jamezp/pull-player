@@ -41,4 +41,8 @@ public class TeamCityBuild {
     public Instant getQueuedDate() {
         return queuedDate;
     }
+
+    public String toString() {
+        return "TeamCityBuild: {status: " + status + ", build: " + build + ", running: " + running + ", queuedDate: " + queuedDate +"}";
+    }
 }
