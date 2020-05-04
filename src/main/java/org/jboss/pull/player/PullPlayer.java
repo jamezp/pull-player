@@ -188,6 +188,10 @@ public class PullPlayer {
             TeamCityBuild build = null;
             if (mergeCommitSha != null) {
                 build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
+                // for legacy compatability and to avoid requeing all jobs, we check if build is null for a build with the previous sha as well
+                if (build == null) {
+                    build = teamCityApi.findBuild(pullNumber, sha1, branch);
+                }
             }
 
             System.out.println("retrigger = " + retrigger);
