@@ -46,6 +46,7 @@ import org.jboss.dmr.Property;
  * @author Tomaz Cerar (c) 2013 Red Hat Inc.
  */
 public class GitHubApi {
+    private static final int CACHE_SIZE = 1000;
     private static final String GITHUB_API_URL = "https://api.github.com";
     private final Path cacheFileName = Util.BASE_DIR.toPath().resolve("github-api.cache");
     private final CloseableHttpClient httpClient;
@@ -70,7 +71,7 @@ public class GitHubApi {
                 e.printStackTrace(System.out);
             }
         }
-        if (p.size() > 250) {
+        if (p.size() > CACHE_SIZE) {
             System.out.println("Size of cache got too big, clearing out cache");
             p.clear();
             cacheDirty.set(true);

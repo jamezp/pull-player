@@ -117,11 +117,11 @@ public class PullPlayer {
             if (comments != null) {
                 for (Comment comment : comments) {
                     commentId = comment.id;
-                    if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
-                        retrigger = false;
-                        help = true;
-                        continue;
-                    }
+                    //if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
+                    //    retrigger = false;
+                    //    help = true;
+                    //    continue;
+                    //}
 
                     if (whiteList.has(user) && whiteList.has(comment.user) && job != null && (retest.matcher(comment.comment).matches() || comment.comment.startsWith(Command.RETEST.getCommand()))) {
                         retriggerDate = comment.created;
