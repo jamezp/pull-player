@@ -111,17 +111,21 @@ public class PullPlayer {
             String job = null;
             if (mergeCommitSha != null) {
                 job = Jobs.getCompletedJob(mergeCommitSha);
+                // also look for a previously completed job via sha1, this is for compatability with how we managed the queue previously
+                if (job == null) {
+                    job = Jobs.getCompletedJob(sha1);
+                }
             }
             // comments == null indicates a NOT-MODIFIED response. A new PR will have an empty
             // but not null comments collection.
             if (comments != null) {
                 for (Comment comment : comments) {
                     commentId = comment.id;
-                    if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
-                        retrigger = false;
-                        help = true;
-                        continue;
-                    }
+                    //if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
+                    //    retrigger = false;
+                    //    help = true;
+                    //    continue;
+                    //}
 
                     if (whiteList.has(user) && whiteList.has(comment.user) && job != null && (retest.matcher(comment.comment).matches() || comment.comment.startsWith(Command.RETEST.getCommand()))) {
                         retriggerDate = comment.created;
@@ -165,13 +169,13 @@ public class PullPlayer {
                 retrigger = false;
             }
 
-            if (help && (! "".equals(commentId))) {
-                StringBuilder buf = new StringBuilder();
-                buf.append(help());
-                gitHubApi.postComment(pullNumber, buf.toString());
-                System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
-                continue;
-            }
+            //if (help && (! "".equals(commentId))) {
+            //    StringBuilder buf = new StringBuilder();
+            //    buf.append(help());
+            //    gitHubApi.postComment(pullNumber, buf.toString());
+            //    System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
+            //    continue;
+            //}
 
             if (whitelistEnabled) {
                 if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
@@ -188,6 +192,16 @@ public class PullPlayer {
             TeamCityBuild build = null;
             if (mergeCommitSha != null) {
                 build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
+                if (build != null) {
+                    System.out.println("mergeCommitSha build: " + build.toString());
+                }
+                // for legacy compatability and to avoid requeing all jobs, we check if build is null for a build with the previous sha as well
+                if (build == null) {
+                    build = teamCityApi.findBuild(pullNumber, sha1, branch);
+                    if (build != null) {
+                        System.out.println("sha1 build: " + build.toString());
+                    }
+                }
             }
 
             System.out.println("retrigger = " + retrigger);
@@ -230,7 +244,7 @@ public class PullPlayer {
             if (notify) {
                 StringBuilder buf = new StringBuilder();
                 buf.append("<p>Hello, " + user + ". I'm waiting for one of the admins to verify this patch with " + Command.OK_TO_TEST.getCommand() + " in a comment.</p>");
-                buf.append(help());
+                //buf.append(help());
                 gitHubApi.postComment(pullNumber, buf.toString());
             }
             return false;
@@ -248,6 +262,19 @@ public class PullPlayer {
             }
         }
         return buf.toString();
+    }
+
+    public void dumpPullRequestData(final int prNumber) {
+        ModelNode node = gitHubApi.getPullRequestDetails(prNumber);
+        System.out.println("Dumping PR: " + prNumber);
+        System.out.println(node.toJSONString(false));
+        boolean mergeable = false;
+        String mergeablestr = node.get("mergeable").asString("");
+        System.out.println("mergeable on PR details: mergeable = " + mergeablestr);
+        mergeable = node.get("mergeable").asString("false").equals("true");
+        System.out.println("Using translated mergeable value of: " + mergeable);
+        String mergeCommitSha = node.get("merge_commit_sha").asString();
+        System.out.println("merge_commit_sha: " + mergeCommitSha);
     }
 
     protected void checkPullRequests() {
