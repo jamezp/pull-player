@@ -165,13 +165,13 @@ public class PullPlayer {
                 retrigger = false;
             }
 
-            if (help && (! "".equals(commentId))) {
-                StringBuilder buf = new StringBuilder();
-                buf.append(help());
-                gitHubApi.postComment(pullNumber, buf.toString());
-                System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
-                continue;
-            }
+            //if (help && (! "".equals(commentId))) {
+            //    StringBuilder buf = new StringBuilder();
+            //    buf.append(help());
+            //    gitHubApi.postComment(pullNumber, buf.toString());
+            //    System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
+            //    continue;
+            //}
 
             if (whitelistEnabled) {
                 if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
@@ -230,7 +230,7 @@ public class PullPlayer {
             if (notify) {
                 StringBuilder buf = new StringBuilder();
                 buf.append("<p>Hello, " + user + ". I'm waiting for one of the admins to verify this patch with " + Command.OK_TO_TEST.getCommand() + " in a comment.</p>");
-                buf.append(help());
+                //buf.append(help());
                 gitHubApi.postComment(pullNumber, buf.toString());
             }
             return false;
