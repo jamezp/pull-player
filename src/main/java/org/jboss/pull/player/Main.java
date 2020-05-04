@@ -5,6 +5,7 @@
  */
 package org.jboss.pull.player;
 
+
 /**
  * Yes, this is a very very ugly hackjob!
  *
@@ -14,6 +15,7 @@ package org.jboss.pull.player;
 public class Main {
 
     public static void main(String[] args) throws Exception {
+
         boolean dry = args.length == 1 && args[0].equals("--dry");
         PullPlayer player = new PullPlayer(dry);
         System.out.println("Starting at: " + PullPlayer.getTime());

@@ -169,6 +169,30 @@ public class GitHubApi {
 
     }
 
+    /**
+     * @return returns the details of a particular pull request
+     */
+    ModelNode getPullRequestDetails(final int pullRequest) {
+        HttpGet get = null;
+        try {
+            String url = baseUrl + "/pulls/" + pullRequest;
+            get = new HttpGet(url);
+            final HttpResponse response = execute(get);
+            url = nextLink(response);
+            if (notModified(response)) {
+                return null;
+            }
+            ModelNode node = ModelNode.fromJSONStream(response.getEntity().getContent());
+                return node;
+        } catch (IOException e) {
+            e.printStackTrace();
+        } finally {
+            if (get != null) {
+                get.releaseConnection();
+            }
+        }
+        return null;
+    }
 
     void updateLastCheck() {
         cache.putIfAbsent("LAST_CHECK", ZonedDateTime.now().toString());
@@ -311,8 +335,6 @@ public class GitHubApi {
             e.printStackTrace(System.err);
         }
     }
-
-
 
     private String getLabelsArray(Collection<String> labels) {
         final StringBuilder sb = new StringBuilder(32).append('[').append('\n');

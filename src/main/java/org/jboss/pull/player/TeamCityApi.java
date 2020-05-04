@@ -268,14 +268,12 @@ public class TeamCityApi {
             ModelNode prop = props.add();
             prop.get("name").set("hash");
             prop.get("value").set(sha1);
-            props.add(prop);
             prop = props.add();
             prop.get("name").set("pull");
             prop.get("value").set(pull);
             prop = props.add();
             prop.get("name").set("branch");
             prop.get("value").set(branch);
-
             post.setEntity(new StringEntity(build.toJSONString(false)));
             final HttpResponse execute = httpClient.execute(post);
             if (execute.getStatusLine().getStatusCode() != HttpURLConnection.HTTP_OK) {
