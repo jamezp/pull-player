@@ -109,11 +109,12 @@ public class PullPlayer {
             List<Comment> comments = gitHubApi.getComments(commentsUrl);
 
             String job = null;
+            // if mergeCommitSha isn't set, we're still waiting on the gh api to update the /merge ref, so we'll retry
             if (mergeCommitSha != null) {
-                job = Jobs.getCompletedJob(mergeCommitSha);
-                // also look for a previously completed job via sha1, this is for compatability with how we managed the queue previously
+                job = Jobs.getCompletedJob(sha1);
+                // also look for a previously completed job via mergecommitsha also, this is for compat with some already run jobs
                 if (job == null) {
-                    job = Jobs.getCompletedJob(sha1);
+                    job = Jobs.getCompletedJob(mergeCommitSha);
                 }
             }
             // comments == null indicates a NOT-MODIFIED response. A new PR will have an empty
@@ -121,11 +122,6 @@ public class PullPlayer {
             if (comments != null) {
                 for (Comment comment : comments) {
                     commentId = comment.id;
-                    //if (whiteList.has(comment.user) && comment.comment.startsWith(Command.HELP.getCommand())) {
-                    //    retrigger = false;
-                    //    help = true;
-                    //    continue;
-                    //}
 
                     if (whiteList.has(user) && whiteList.has(comment.user) && job != null && (retest.matcher(comment.comment).matches() || comment.comment.startsWith(Command.RETEST.getCommand()))) {
                         retriggerDate = comment.created;
@@ -169,14 +165,6 @@ public class PullPlayer {
                 retrigger = false;
             }
 
-            //if (help && (! "".equals(commentId))) {
-            //    StringBuilder buf = new StringBuilder();
-            //    buf.append(help());
-            //    gitHubApi.postComment(pullNumber, buf.toString());
-            //    System.out.println("Help comment: (PR: " + pullNumber + ")" + buf.toString());
-            //    continue;
-            //}
-
             if (whitelistEnabled) {
                 if (job == null && !verifyWhitelist(whiteList, user, pullNumber, whitelistNotify)) {
                     System.out.println("User not on approved tester list, user: " + user);
@@ -191,13 +179,13 @@ public class PullPlayer {
             System.out.printf("merge commit sha: %s\n", mergeCommitSha);
             TeamCityBuild build = null;
             if (mergeCommitSha != null) {
-                build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
+                build = teamCityApi.findBuild(pullNumber, sha1, branch);
                 if (build != null) {
-                    System.out.println("mergeCommitSha build: " + build.toString());
+                    System.out.println("found build: " + build.toString());
                 }
-                // for legacy compatability and to avoid requeing all jobs, we check if build is null for a build with the previous sha as well
+                // for legacy compatability and to avoid requeuing all jobs, we check if build is null for a build with the previously used mergecommitsha as well
                 if (build == null) {
-                    build = teamCityApi.findBuild(pullNumber, sha1, branch);
+                    build = teamCityApi.findBuild(pullNumber, mergeCommitSha, branch);
                     if (build != null) {
                         System.out.println("sha1 build: " + build.toString());
                     }
@@ -215,7 +203,7 @@ public class PullPlayer {
                     System.out.println("Build already running");
                 } else {
                     job = null;
-                    Jobs.remove(mergeCommitSha);
+                    Jobs.remove(sha1);
                 }
             }
 
@@ -226,12 +214,12 @@ public class PullPlayer {
 
             if (build != null && !retrigger) {
                 if (build.getStatus() != null) {
-                    Jobs.storeCompletedJob(mergeCommitSha, pullNumber, build.getBuild());
+                    Jobs.storeCompletedJob(sha1, pullNumber, build.getBuild());
                 } else {
                     System.out.println("In progress, skipping: " + pullNumber);
                 }
-            } else if (mergeCommitSha != null && noBuildPending(pullNumber, queue)) {
-                teamCityApi.triggerJob(pullNumber, mergeCommitSha, branch);
+            } else if (mergeable && mergeCommitSha != null && sha1 != null && noBuildPending(pullNumber, queue)) {
+                teamCityApi.triggerJob(pullNumber, sha1, branch);
             } else {
                 System.out.println("Pending build, skipping: " + pullNumber);
             }
