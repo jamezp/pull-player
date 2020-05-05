@@ -218,7 +218,7 @@ public class PullPlayer {
                 } else {
                     System.out.println("In progress, skipping: " + pullNumber);
                 }
-            } else if (sha1 != null && noBuildPending(pullNumber, queue)) {
+            } else if (mergeable && mergeCommitSha != null && sha1 != null && noBuildPending(pullNumber, queue)) {
                 teamCityApi.triggerJob(pullNumber, sha1, branch);
             } else {
                 System.out.println("Pending build, skipping: " + pullNumber);
